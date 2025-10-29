@@ -1,0 +1,29 @@
+{
+  "name": "menumanager-frontend",
+  "version": "1.0.0",
+  "description": "Systematic organization of weekly grouping of manually created recipes",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Giavonator/MenuManager-Frontend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Giavonator/MenuManager-Frontend/issues"
+  },
+  "homepage": "https://github.com/Giavonator/MenuManager-Frontend#readme",
+  "dependencies": {
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.1",
+    "vite": "^7.1.12"
+  }
+}
