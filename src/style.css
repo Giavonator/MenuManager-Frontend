@@ -3,9 +3,28 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  /* Color Palette Variables */
+  --primary-color: #122274;
+  --secondary-color: #0557a3;
+  --white: #ffffff;
+  --accent-red: #f64135;
+  --error-red: #c90000;
+  --french-red: #dc143c;
+  --french-blue: #002395;
+  --light-french-blue: #4a90e2;
+  --light-french-red: #ff6b6b;
+  --very-dark-blue: #0a0a1a;
+  
+  /* Derived colors */
+  --primary-light: rgba(18, 34, 116, 0.1);
+  --primary-dark: rgba(18, 34, 116, 0.8);
+  --secondary-light: rgba(5, 87, 163, 0.1);
+  --accent-light: rgba(246, 65, 53, 0.1);
+  --error-light: rgba(201, 0, 0, 0.1);
+
+  color-scheme: light;
+  color: var(--primary-color);
+  background-color: var(--white);
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -25,7 +44,7 @@ body {
   place-items: center;
   min-width: 320px;
   min-height: 100vh;
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  background: linear-gradient(135deg, var(--white) 0%, var(--secondary-light) 100%);
 }
 
 #app {
@@ -33,13 +52,23 @@ body {
   min-height: 100vh;
 }
 
+/* Ensure input text is always visible */
+input, textarea, select {
+  color: var(--primary-color) !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: #7f8c8d !important;
+  opacity: 1;
+}
+
 @media (prefers-color-scheme: light) {
   :root {
-    color: #213547;
-    background-color: #ffffff;
+    color: var(--primary-color);
+    background-color: var(--white);
   }
   
   body {
-    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    background: linear-gradient(135deg, var(--white) 0%, var(--secondary-light) 100%);
   }
 }

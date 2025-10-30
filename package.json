@@ -20,7 +20,9 @@
   },
   "homepage": "https://github.com/Giavonator/MenuManager-Frontend#readme",
   "dependencies": {
-    "vue": "^3.4.0"
+    "axios": "^1.13.1",
+    "vue": "^3.4.0",
+    "vue-router": "^4.6.3"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.1",

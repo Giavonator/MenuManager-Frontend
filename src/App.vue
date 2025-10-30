@@ -1,95 +1,292 @@
 <template>
   <div id="app">
-    <header class="header">
-      <h1>Menu Manager</h1>
-      <p>Systematic organization of weekly grouping of manually created recipes</p>
-    </header>
+    <!-- Login Page -->
+    <LoginPage 
+      v-if="!isLoggedIn" 
+      @login-success="handleLoginSuccess" 
+    />
     
-    <main class="main">
-      <div class="welcome">
-        <h2>Welcome to Menu Manager</h2>
-        <p>Your Vue.js application is ready to go!</p>
-        <button @click="count++" class="counter-btn">
-          Count is: {{ count }}
-        </button>
-      </div>
-    </main>
+    <!-- Main Application -->
+    <div v-else class="app-container">
+      <header class="header">
+        <div class="header-content">
+          <div class="header-left">
+            <router-link to="/" class="logo-btn">
+              <h1>Menu Manager</h1>
+            </router-link>
+          </div>
+          <div class="header-center">
+            <nav class="navigation">
+              <router-link to="/" class="nav-btn" :class="{ 'active': $route.name === 'home' }">Home</router-link>
+              <router-link to="/store-catalog" class="nav-btn" :class="{ 'active': $route.name === 'store-catalog' }">Store Catalog</router-link>
+              <router-link to="/menus" class="nav-btn" :class="{ 'active': $route.name === 'menus' }">Menus</router-link>
+              <router-link to="/weekly-cart" class="nav-btn" :class="{ 'active': $route.name === 'weekly-cart' }">Weekly Cart</router-link>
+            </nav>
+          </div>
+          <div class="header-right">
+            <div class="user-info">
+              <span class="username">Bonjour {{ currentUser.username }} !</span>
+              <button @click="handleLogout" class="logout-btn">Logout</button>
+            </div>
+          </div>
+        </div>
+      </header>
+      
+      <main class="main">
+        <router-view v-slot="{ Component }">
+          <component :is="Component" @view-menu="viewMenu" @back-to-menus="backToMenus" />
+        </router-view>
+      </main>
+    </div>
   </div>
 </template>
 
 <script>
-import { ref } from 'vue'
+import { computed } from 'vue'
+import { useRouter } from 'vue-router'
+import LoginPage from './components/LoginPage.vue'
+import { authStore, authState } from './stores/authStore.js'
 
 export default {
   name: 'App',
+  components: {
+    LoginPage
+  },
   setup() {
-    const count = ref(0)
+    const router = useRouter()
+    
+    // Use reactive state from auth store
+    const isLoggedIn = computed(() => authState.isAuthenticated)
+    const currentUser = computed(() => authState.user)
+    
+    // Handle successful login
+    const handleLoginSuccess = (userData) => {
+      // User is already set in the store, just emit success
+      console.log('Login successful:', userData)
+    }
+    
+    // Handle logout
+    const handleLogout = () => {
+      authStore.logout()
+    }
+    
+    // Handle menu navigation from child component event
+    const viewMenu = (menuId) => {
+      router.push({ name: 'menu', params: { id: String(menuId) } })
+    }
+    
+    const backToMenus = () => {
+      router.push({ name: 'menus' })
+    }
     
     return {
-      count
+      currentUser,
+      isLoggedIn,
+      handleLoginSuccess,
+      handleLogout,
+      viewMenu,
+      backToMenus
     }
   }
 }
 </script>
 
 <style scoped>
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
 .header {
-  text-align: center;
-  padding: 2rem 0;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  margin-bottom: 2rem;
+  background: var(--very-dark-blue);
+  color: var(--white);
+  padding: 1rem 0;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
 }
 
-.header h1 {
+.header-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 2rem;
+  display: grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  align-items: center;
+  gap: 2rem;
+}
+
+.header-left {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.header-center {
+  display: flex;
+  justify-content: center;
+}
+
+.header-right {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.logo-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: opacity 0.3s ease;
+}
+
+.logo-btn:hover {
+  opacity: 0.8;
+}
+
+.logo-btn h1 {
   margin: 0;
-  font-size: 2.5rem;
+  font-size: 1.75rem;
   font-weight: 600;
+  color: var(--light-french-blue);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
-.header p {
-  margin: 0.5rem 0 0 0;
+.header-right {
+  display: flex;
+  align-items: center;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.username {
+  font-weight: 500;
   opacity: 0.9;
-  font-size: 1.1rem;
+  color: var(--light-french-red);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.logout-btn {
+  background: rgba(255, 255, 255, 0.2);
+  color: var(--white);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.3s ease;
+}
+
+.logout-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.navigation {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.nav-btn {
+  background: none;
+  border: none;
+  padding: 0.75rem 1rem;
+  color: var(--white);
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border-radius: 6px;
+  opacity: 0.9;
+}
+
+.nav-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.nav-btn.active {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 .main {
-  max-width: 800px;
+  flex: 1;
+  width: 100%;
+  padding-top: 4rem;
+}
+
+
+.page-content {
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 0 2rem;
+  padding: 2rem;
 }
 
-.welcome {
-  text-align: center;
-  padding: 3rem 0;
-}
-
-.welcome h2 {
-  color: #2c3e50;
+.page-content h2 {
+  color: var(--primary-color);
   margin-bottom: 1rem;
   font-size: 2rem;
 }
 
-.welcome p {
-  color: #7f8c8d;
+.page-content p {
+  color: var(--secondary-color);
   margin-bottom: 2rem;
   font-size: 1.1rem;
 }
 
-.counter-btn {
-  background: #42b883;
-  color: white;
-  border: none;
-  padding: 1rem 2rem;
-  font-size: 1.1rem;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.3s ease;
+.coming-soon {
+  background: var(--primary-light);
+  border-radius: 12px;
+  padding: 3rem;
+  text-align: center;
 }
 
-.counter-btn:hover {
-  background: #369870;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(66, 184, 131, 0.3);
+.coming-soon p {
+  color: var(--secondary-color);
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .header-content {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    text-align: center;
+  }
+  
+  .header-left,
+  .header-center,
+  .header-right {
+    justify-content: center;
+  }
+  
+  .logo-btn h1 {
+    font-size: 1.4rem;
+  }
+  
+  .user-info {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .navigation {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  
+  .nav-btn {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+  }
 }
 </style>
