@@ -442,7 +442,7 @@ export default {
 input[type="password"] {
   -webkit-text-security: disc;
   text-security: disc;
-  font-family: monospace;
+  font-family: 'Garamond', 'Times New Roman', serif;
 }
 
 .form-input.error {

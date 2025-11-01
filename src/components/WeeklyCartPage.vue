@@ -62,8 +62,7 @@
         <div v-for="(date, index) in weekDates" :key="index" 
              :class="['day-column', { 'extra-column': index === 6 }]">
           
-          <!-- Regular Days (Su-F) -->
-          <div v-if="index < 6" class="day-content">
+          <div class="day-content">
             <div class="date-display">
               {{ formatDate(date) }}
             </div>
@@ -71,19 +70,16 @@
             <div class="menu-card" v-if="getMenuForDate(date)">
               <div class="menu-info">
                 <h4>{{ getMenuForDate(date).name }}</h4>
-                <p class="menu-date">{{ formatDate(date) }}</p>
-                <p class="menu-owner" v-if="getMenuForDate(date).owner !== authState.user?.id">
-                  by {{ getMenuForDate(date).ownerName || 'Other User' }}
+                <p class="menu-owner">
+                  by {{ getMenuForDate(date).ownerName || (getMenuForDate(date).owner === authState.user?.id ? (authState.user?.username || 'You') : 'Other User') }}
                 </p>
+                <ul class="recipe-list" v-if="getMenuForDate(date).recipeNames && getMenuForDate(date).recipeNames.length">
+                  <li v-for="(rName, idx) in getMenuForDate(date).recipeNames" :key="idx">{{ idx + 1 }}. {{ rName }}</li>
+                </ul>
               </div>
               <div class="menu-actions">
                 <button @click="viewMenu(getMenuForDate(date))" class="action-btn view-btn">
                   View
-                </button>
-                <button v-if="getMenuForDate(date).owner === authState.user?.id" 
-                        @click="removeMenuFromCart(getMenuForDate(date))" 
-                        class="action-btn remove-btn">
-                  Remove
                 </button>
               </div>
             </div>
@@ -95,75 +91,36 @@
               </button>
             </div>
           </div>
-
-          <!-- Extra Day (E) -->
-          <div v-else class="extra-content">
-            <div class="extra-header">
-              <h3>Extra Menu</h3>
-              <p>Miscellaneous Items</p>
-            </div>
-            
-            <div v-if="extraMenu" class="extra-menu-card">
-              <div class="extra-menu-info">
-                <h4>{{ extraMenu.name || 'Extra Items' }}</h4>
-                <p class="item-count">{{ getExtraMenuItemCount() }} items</p>
-              </div>
-              <div class="extra-menu-actions">
-                <button @click="viewExtraMenu" class="action-btn view-btn">
-                  View Items
-                </button>
-                <button @click="addItemToExtraMenu" class="action-btn add-btn">
-                  Add Item
-                </button>
-              </div>
-            </div>
-            
-            <div v-else class="no-extra-menu">
-              <p>No Extra Menu</p>
-              <button @click="createExtraMenu" class="create-extra-btn">
-                Create Extra Menu
-              </button>
-            </div>
-          </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Cart Information -->
-    <div v-if="!isLoading && !error" class="cart-management">
-      <div class="cart-actions">
-        <button @click="viewCartDetails" class="action-btn secondary-btn" :disabled="!currentCart">
-          View Cart Details
-        </button>
-        <button @click="debugWeekData" class="action-btn secondary-btn">
-          Debug Info
-        </button>
-      </div>
-      
-      <div v-if="currentCart" class="cart-info">
-        <p><strong>Week:</strong> {{ formatWeekRange(currentWeekStart) }}</p>
-        <p><strong>Menus in Cart:</strong> {{ Object.keys(weekMenus).length }}</p>
-        <p><strong>Cart Status:</strong> Active</p>
-      </div>
-      
-      <div v-else class="cart-info">
-        <p><strong>Week:</strong> {{ formatWeekRange(currentWeekStart) }}</p>
-        <p><strong>Cart Status:</strong> No cart exists for this week</p>
-        <p class="cart-note">Cart will be created automatically when you add your first menu.</p>
-        <button @click="createCartForWeek" class="action-btn primary-btn" :disabled="isLoading">
-          Create Cart for This Week
-        </button>
       </div>
     </div>
 
     <!-- Weekly Ingredients List -->
     <div v-if="!isLoading && !error" class="weekly-ingredients">
       <div class="ingredients-header">
-        <h3>Weekly Shopping List</h3>
-        <p>Aggregated ingredients needed for the week</p>
-        <button @click="loadWeeklyIngredients" class="action-btn secondary-btn" :disabled="isLoadingIngredients">
-          {{ isLoadingIngredients ? 'Loading...' : 'Refresh Ingredients' }}
-        </button>
+        <div class="header-title">
+          <h3>Weekly Shopping List</h3>
+          <p>Aggregated ingredients needed for the week</p>
+        </div>
+        <div class="header-controls">
+          <div class="sorting-controls">
+            <span class="sort-label">Sort:</span>
+            <label class="sort-toggle">
+              <input type="checkbox" v-model="sortByMenu" @change="sortByStore = false; applySorting()">
+              <span>By Menu</span>
+            </label>
+            <button 
+              @click="sortByMenu = false; sortByStore = true; applySorting()" 
+              :class="['sort-btn', { 'active': sortByStore && !sortByMenu }]"
+              :disabled="true"
+              title="By Store sorting requires PurchaseSystem integration">
+              By Store
+            </button>
+          </div>
+          <button @click="loadWeeklyIngredients" class="action-btn secondary-btn" :disabled="isLoadingIngredients">
+            {{ isLoadingIngredients ? 'Loading...' : 'Refresh Ingredients' }}
+          </button>
+        </div>
       </div>
       
       <div v-if="isLoadingIngredients" class="loading-ingredients">
@@ -178,26 +135,28 @@
       
       <div v-else class="ingredients-list">
         <div class="ingredients-summary">
-          <p><strong>Total Ingredients:</strong> {{ weeklyIngredients.length }}</p>
+          <p><strong>Total Ingredients:</strong> {{ ingredientCount }}</p>
           <p><strong>Total Quantity:</strong> {{ totalQuantity }}</p>
         </div>
         
         <div class="ingredients-grid">
-          <div v-for="ingredient in weeklyIngredients" :key="`${ingredient.name}-${ingredient.units}`" 
-               class="ingredient-item">
+          <div v-for="ingredient in sortedIngredients" :key="`${ingredient.name}-${ingredient.units}`" 
+               :class="['ingredient-item', { 'menu-header': ingredient.isMenuHeader }]">
             <div class="ingredient-info">
               <h4>{{ ingredient.name }}</h4>
-              <p class="ingredient-details">
+              <p v-if="!ingredient.isMenuHeader" class="ingredient-details">
                 <span class="quantity">{{ formatQuantity(ingredient.totalQuantity) }}</span>
                 <span class="units">{{ ingredient.units }}</span>
-                <span class="sources">({{ ingredient.sources.length }} menu{{ ingredient.sources.length !== 1 ? 's' : '' }})</span>
+                <span class="sources" v-if="ingredient.sources && ingredient.sources.length > 0">
+                  ({{ ingredient.sources.length }} menu{{ ingredient.sources.length !== 1 ? 's' : '' }})
+                </span>
               </p>
             </div>
-            <div class="ingredient-sources">
+            <div v-if="!ingredient.isMenuHeader && ingredient.sources && ingredient.sources.length > 0" class="ingredient-sources">
               <div v-for="source in ingredient.sources" :key="source.menuId" class="source-item">
                 <span class="source-menu">{{ source.menuName }}</span>
                 <span class="source-date">{{ source.date }}</span>
-                <span class="source-quantity">{{ formatQuantity(source.quantity) }} {{ ingredient.units }}</span>
+                <span class="source-quantity">{{ formatQuantity(source.quantity) }} {{ source.units || ingredient.units }}</span>
               </div>
             </div>
           </div>
@@ -251,19 +210,107 @@ import { purchaseSystemService } from '../services/purchaseSystemService.js'
 import { menuCollectionService } from '../services/menuCollectionService.js'
 import { cookBookService } from '../services/cookBookService.js'
 import { authState } from '../stores/authStore.js'
+import { authService } from '../services/authService.js'
 
 export default {
   name: 'WeeklyCartPage',
-  setup() {
+  setup(props, { emit }) {
     // Reactive state
     const isLoading = ref(false)
     const error = ref(null)
     const currentWeekStart = ref(weeklyCartService.getWeekStart(new Date()))
     const currentCart = ref(null)
     const weekMenus = ref({})
-    const extraMenu = ref(null)
     const weeklyIngredients = ref([])
     const isLoadingIngredients = ref(false)
+    const sortedIngredients = ref([])
+    
+    // Sorting state (default to combined list)
+    const sortByMenu = ref(false)
+    const sortByStore = ref(false)
+
+    const UNIT_CONVERSIONS = {
+      g: { base: 'g', factor: 1 },
+      kg: { base: 'g', factor: 1000 },
+      mg: { base: 'g', factor: 0.001 },
+      ml: { base: 'ml', factor: 1 },
+      l: { base: 'ml', factor: 1000 },
+      tsp: { base: 'ml', factor: 4.92892 },
+      tbsp: { base: 'ml', factor: 14.7868 },
+      cup: { base: 'ml', factor: 240 },
+      oz: { base: 'g', factor: 28.3495 },
+      lb: { base: 'g', factor: 453.592 },
+      pound: { base: 'g', factor: 453.592 }
+    }
+
+    const normalizeToBase = (quantity, units) => {
+      if (typeof quantity !== 'number' || Number.isNaN(quantity)) {
+        return {
+          quantityInBase: 0,
+          baseUnit: units || '',
+          originalQuantity: quantity || 0,
+          originalUnits: units || ''
+        }
+      }
+
+      if (!units) {
+        return {
+          quantityInBase: quantity,
+          baseUnit: '',
+          originalQuantity: quantity,
+          originalUnits: ''
+        }
+      }
+
+      const unitKey = units.toLowerCase()
+      const conversion = UNIT_CONVERSIONS[unitKey]
+
+      if (!conversion) {
+        return {
+          quantityInBase: quantity,
+          baseUnit: units,
+          originalQuantity: quantity,
+          originalUnits: units
+        }
+      }
+
+      return {
+        quantityInBase: quantity * conversion.factor,
+        baseUnit: conversion.base,
+        originalQuantity: quantity,
+        originalUnits: units
+      }
+    }
+
+    const formatQuantityFromBase = (quantityInBase, baseUnit) => {
+      const rounded = (value) => {
+        const fixed = Number(value.toFixed(2))
+        return Number.isInteger(fixed) ? Math.trunc(fixed) : fixed
+      }
+
+      if (!baseUnit) {
+        return { quantity: rounded(quantityInBase), units: '' }
+      }
+
+      if (baseUnit === 'g') {
+        if (quantityInBase >= 1000) {
+          return { quantity: rounded(quantityInBase / 1000), units: 'kg' }
+        }
+        if (quantityInBase < 1) {
+          return { quantity: rounded(quantityInBase * 1000), units: 'mg' }
+        }
+        return { quantity: rounded(quantityInBase), units: 'g' }
+      }
+
+      if (baseUnit === 'ml') {
+        if (quantityInBase >= 1000) {
+          return { quantity: rounded(quantityInBase / 1000), units: 'l' }
+        }
+        return { quantity: rounded(quantityInBase), units: 'ml' }
+      }
+
+      return { quantity: rounded(quantityInBase), units: baseUnit }
+    }
     
     // Modal state
     const showAddMenuModal = ref(false)
@@ -287,6 +334,8 @@ export default {
       }, 0)
     })
 
+    const ingredientCount = computed(() => weeklyIngredients.value.length)
+
     // Methods
     const formatDate = (date) => {
       return weeklyCartService.formatDate(date)
@@ -297,16 +346,47 @@ export default {
       return `${formatDate(weekStart)} - ${formatDate(weekEnd)}`
     }
 
+    const fetchMenuExtras = async (menuId, ownerId) => {
+      // Fetch username for owner
+      let ownerName = null
+      try {
+        // Prefer authState if matches current user
+        if (authState.user?.id === ownerId && authState.user?.username) {
+          ownerName = authState.user.username
+        } else {
+          ownerName = await authService.getUsername(ownerId)
+        }
+      } catch (e) {
+        ownerName = ownerId
+      }
+
+      // Fetch recipe names
+      const recipeNames = []
+      try {
+        const recipesResp = await menuCollectionService.getRecipesInMenu(menuId)
+        const recipeMap = recipesResp[0]?.menuRecipes || {}
+        const recipeIds = Object.keys(recipeMap)
+        for (const recipeId of recipeIds) {
+          try {
+            const details = await cookBookService.getRecipeDetails(recipeId)
+            const name = details[0]?.name || `Recipe ${recipeId}`
+            recipeNames.push(name)
+          } catch (e) {
+            recipeNames.push(`Recipe ${recipeId}`)
+          }
+        }
+      } catch (e) {
+        // ignore, leave empty list
+      }
+
+      return { ownerName, recipeNames }
+    }
+
     const getMenuForDate = (date) => {
       const dateStr = formatDate(date)
       return weekMenus.value[dateStr] || null
     }
 
-    const getExtraMenuItemCount = () => {
-      if (!extraMenu.value) return 0
-      // This would need to be implemented based on the actual extra menu structure
-      return 0
-    }
 
     const formatQuantity = (quantity) => {
       // Format quantity to show up to 2 decimal places, removing trailing zeros
@@ -333,6 +413,7 @@ export default {
           const menu = weekMenus.value[dateStr]
           
           if (menu) {
+            const ownerDisplayName = menu.ownerName || (menu.owner === authState.user?.id ? (authState.user?.username || 'You') : 'Other User')
             try {
               // Get ingredients for this menu
               const ingredientsResponse = await menuCollectionService.getRecipesInMenu(menu.id)
@@ -353,27 +434,36 @@ export default {
                       // Process each ingredient
                       for (const ingredient of recipeIngredients) {
                         const scaledQuantity = ingredient.quantity * scalingFactor
-                        const key = `${ingredient.name}-${ingredient.units}`
-                        
+                        const normalized = normalizeToBase(scaledQuantity, ingredient.units)
+                        const key = `${ingredient.name}-${normalized.baseUnit}`
+
                         if (ingredientsMap.has(key)) {
                           const existing = ingredientsMap.get(key)
-                          existing.totalQuantity += scaledQuantity
+                          existing.totalBaseQuantity += normalized.quantityInBase
                           existing.sources.push({
                             menuId: menu.id,
                             menuName: menu.name,
+                            ownerName: ownerDisplayName,
                             date: dateStr,
-                            quantity: scaledQuantity
+                            quantity: normalized.originalQuantity,
+                            units: normalized.originalUnits,
+                            quantityInBase: normalized.quantityInBase,
+                            baseUnit: normalized.baseUnit
                           })
                         } else {
                           ingredientsMap.set(key, {
                             name: ingredient.name,
-                            units: ingredient.units,
-                            totalQuantity: scaledQuantity,
+                            baseUnit: normalized.baseUnit,
+                            totalBaseQuantity: normalized.quantityInBase,
                             sources: [{
                               menuId: menu.id,
                               menuName: menu.name,
+                              ownerName: ownerDisplayName,
                               date: dateStr,
-                              quantity: scaledQuantity
+                              quantity: normalized.originalQuantity,
+                              units: normalized.originalUnits,
+                              quantityInBase: normalized.quantityInBase,
+                              baseUnit: normalized.baseUnit
                             }]
                           })
                         }
@@ -392,15 +482,123 @@ export default {
 
         // Convert map to array and sort by name
         weeklyIngredients.value = Array.from(ingredientsMap.values())
+          .map((entry) => {
+            const { quantity: displayQuantity, units: displayUnits } = formatQuantityFromBase(entry.totalBaseQuantity, entry.baseUnit)
+            return {
+              name: entry.name,
+              units: displayUnits,
+              totalQuantity: displayQuantity,
+              baseUnit: entry.baseUnit,
+              totalBaseQuantity: entry.totalBaseQuantity,
+              sources: entry.sources
+            }
+          })
           .sort((a, b) => a.name.localeCompare(b.name))
 
         console.log('Weekly ingredients loaded:', weeklyIngredients.value)
+        
+        // Apply initial sorting
+        applySorting()
 
       } catch (err) {
         console.error('Error loading weekly ingredients:', err)
         error.value = err.message || 'Failed to load weekly ingredients'
       } finally {
         isLoadingIngredients.value = false
+      }
+    }
+    
+    const fullDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+    const getFullDayName = (dateStr) => {
+      if (!dateStr) return 'Unknown Day'
+      const date = new Date(`${dateStr}T00:00:00Z`)
+      if (Number.isNaN(date.getTime())) {
+        return 'Unknown Day'
+      }
+      const idx = date.getUTCDay()
+      return fullDayNames[idx] || 'Unknown Day'
+    }
+
+    const applySorting = () => {
+      if (weeklyIngredients.value.length === 0) {
+        sortedIngredients.value = []
+        return
+      }
+      
+      if (sortByStore.value) {
+        // TODO: Implement By Store sorting when PurchaseSystem integration is complete
+        // This requires:
+        // 1. Linking ingredients in recipes to StoreCatalog items
+        // 2. Fetching purchase options for each item to determine which store they should come from
+        // 3. Grouping ingredients by store
+        // 4. Displaying ingredients organized by store for optimized shopping trips
+        
+        // For now, just show aggregated view with TODO comment
+        sortedIngredients.value = weeklyIngredients.value
+        console.log('By Store sorting not yet implemented - requires PurchaseSystem integration')
+      } else if (sortByMenu.value) {
+        // Sort by menu: group ingredients by which menu they come from
+        const menuSections = new Map()
+
+        for (const ingredient of weeklyIngredients.value) {
+          if (!ingredient.sources || ingredient.sources.length === 0) continue
+
+          for (const source of ingredient.sources) {
+            const sectionKey = source.menuId || `${source.menuName}-${source.date}`
+
+            if (!menuSections.has(sectionKey)) {
+              const menuMeta = weekMenus.value[source.date]
+              const ownerName = source.ownerName || menuMeta?.ownerName || (menuMeta?.owner === authState.user?.id ? (authState.user?.username || 'You') : 'Other User')
+
+              menuSections.set(sectionKey, {
+                menuId: source.menuId,
+                date: source.date,
+                menuName: source.menuName,
+                ownerName,
+                ingredients: []
+              })
+            }
+
+            const section = menuSections.get(sectionKey)
+            section.ingredients.push({
+              name: ingredient.name,
+              units: source.units || ingredient.units,
+              totalQuantity: source.quantity,
+              sources: [{
+                menuId: section.menuId,
+                menuName: section.menuName,
+                ownerName: section.ownerName,
+                date: section.date,
+                quantity: source.quantity,
+                units: source.units || ingredient.units
+              }]
+            })
+          }
+        }
+
+        // Flatten into sorted array by menu date
+        sortedIngredients.value = []
+        Array.from(menuSections.values())
+          .sort((a, b) => a.date.localeCompare(b.date))
+          .forEach((section) => {
+            const dayName = getFullDayName(section.date)
+            const ownerLabel = section.ownerName || 'Unknown User'
+            sortedIngredients.value.push({
+              name: `${dayName} - ${ownerLabel} - ${section.menuName}`,
+              units: '',
+              totalQuantity: 0,
+              sources: [],
+              isMenuHeader: true
+            })
+
+            section.ingredients
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .forEach((ing) => sortedIngredients.value.push(ing))
+          })
+      } else {
+        // Default: aggregated view (all ingredients combined)
+        sortedIngredients.value = weeklyIngredients.value
       }
     }
 
@@ -447,11 +645,14 @@ export default {
                 const menuDetails = await menuCollectionService.getMenuDetails(menuIdForDate)
                 if (menuDetails[0]) {
                   const menu = menuDetails[0]
+                  const extras = await fetchMenuExtras(menuIdForDate, menu.owner)
                   weekMenus.value[dateStr] = {
                     id: menuIdForDate,
                     name: menu.name,
                     date: menu.date,
-                    owner: menu.owner
+                    owner: menu.owner,
+                    ownerName: extras.ownerName,
+                    recipeNames: extras.recipeNames
                   }
                   console.log(`Placed cart menu ${menuIdForDate} on ${dateStr}`)
                 }
@@ -470,31 +671,6 @@ export default {
           currentCart.value = null
         }
 
-        // If no cart was found, try to create one for this week
-        if (!currentCart.value) {
-          console.log('No cart found, attempting to create one for this week')
-          try {
-            const createCartResponse = await weeklyCartService.createCart(weekStartStr)
-            console.log('Create cart response:', createCartResponse)
-            
-            if (createCartResponse.cart) {
-              currentCart.value = { id: createCartResponse.cart }
-              console.log('Created new cart:', currentCart.value.id)
-            }
-          } catch (createErr) {
-            console.log('Could not create cart (might already exist):', createErr.message)
-            // Try to get the cart again in case it was created by another process
-            const retryCartResponse = await weeklyCartService.getCartByDate(weekStartStr)
-            if (retryCartResponse[0]?.cart) {
-              currentCart.value = { id: retryCartResponse[0].cart }
-              console.log('Found cart on retry:', currentCart.value.id)
-            }
-          }
-        }
-
-        // Load extra menu if it exists
-        await loadExtraMenu()
-
         // Load weekly ingredients after menus are loaded
         await loadWeeklyIngredients()
         
@@ -505,27 +681,6 @@ export default {
         error.value = err.message || 'Failed to load week data'
       } finally {
         isLoading.value = false
-      }
-    }
-
-    const loadExtraMenu = async () => {
-      try {
-        // Check if extra menu exists for this week
-        const extraMenuId = `extra-${formatDate(currentWeekStart.value)}`
-        const orderResponse = await purchaseSystemService.getOrderByAssociateID(extraMenuId)
-        
-        if (orderResponse[0]?.order) {
-          extraMenu.value = {
-            id: orderResponse[0].order._id,
-            name: 'Extra Items',
-            associateID: extraMenuId
-          }
-        } else {
-          extraMenu.value = null
-        }
-      } catch (err) {
-        console.error('Error loading extra menu:', err)
-        extraMenu.value = null
       }
     }
 
@@ -551,29 +706,6 @@ export default {
       currentWeekStart.value = weeklyCartService.getWeekStart(selected)
     }
 
-    const createCartForWeek = async () => {
-      isLoading.value = true
-      try {
-        const weekStartStr = formatDate(currentWeekStart.value)
-        console.log('Creating cart for week starting:', weekStartStr)
-        
-        const createCartResponse = await weeklyCartService.createCart(weekStartStr)
-        console.log('Create cart response:', createCartResponse)
-        
-        if (createCartResponse.cart) {
-          currentCart.value = { id: createCartResponse.cart }
-          console.log('Created cart:', currentCart.value.id)
-          await loadWeekData() // Refresh data
-        } else {
-          throw new Error('Failed to create cart')
-        }
-      } catch (err) {
-        console.error('Error creating cart:', err)
-        error.value = err.message || 'Failed to create cart'
-      } finally {
-        isLoading.value = false
-      }
-    }
 
     const addMenuToDate = (date) => {
       selectedDate.value = date
@@ -615,12 +747,15 @@ export default {
             throw new Error(`Failed to add menu to cart: ${addErr.message}`)
           }
           
-          // Update local state
+          // Update local state with owner name and recipe names
+          const extras = await fetchMenuExtras(menuId, currentUser.id)
           weekMenus.value[dateStr] = {
             id: menuId,
             name: menuName,
             date: dateStr,
-            owner: currentUser.id
+            owner: currentUser.id,
+            ownerName: extras.ownerName,
+            recipeNames: extras.recipeNames
           }
 
           closeAddMenuModal()
@@ -662,133 +797,18 @@ export default {
     }
 
 
-    const viewCartDetails = async () => {
-      if (!currentCart.value) return
 
-      try {
-        const datesResponse = await weeklyCartService.getCartDates(currentCart.value.id)
-        const menusResponse = await weeklyCartService.getMenusInCart(currentCart.value.id)
-        
-        console.log('Cart Details:', {
-          dates: datesResponse,
-          menus: menusResponse
-        })
-        
-        // You could show this in a modal or alert
-        alert(`Cart Details:\nDates: ${JSON.stringify(datesResponse)}\nMenus: ${JSON.stringify(menusResponse)}`)
-      } catch (err) {
-        console.error('Error getting cart details:', err)
-        error.value = err.message || 'Failed to get cart details'
-      }
-    }
-
-    const debugWeekData = async () => {
-      const currentUser = authState.user
-      const weekDatesArray = weeklyCartService.getWeekDates(currentWeekStart.value)
-      const weekStartStr = formatDate(currentWeekStart.value)
-      
-      console.log('=== DEBUG WEEK DATA ===')
-      console.log('Current User:', currentUser)
-      console.log('Current Week Start:', currentWeekStart.value)
-      console.log('Week Start String:', weekStartStr)
-      console.log('Week Dates:', weekDatesArray.map(d => formatDate(d)))
-      console.log('Current Cart:', currentCart.value)
-      console.log('Week Menus:', weekMenus.value)
-      console.log('Extra Menu:', extraMenu.value)
-      
-      // Test WeeklyCart APIs
-      try {
-        console.log('=== TESTING WEEKLY CART APIs ===')
-        
-        // Test getCartByDate
-        console.log('Testing getCartByDate for:', weekStartStr)
-        const cartResponse = await weeklyCartService.getCartByDate(weekStartStr)
-        console.log('getCartByDate response:', cartResponse)
-        
-        if (cartResponse[0]?.cart) {
-          const cartId = cartResponse[0].cart
-          console.log('Found cart ID:', cartId)
-          
-          // Test getMenusInCart
-          console.log('Testing getMenusInCart for cart:', cartId)
-          const menusResponse = await weeklyCartService.getMenusInCart(cartId)
-          console.log('getMenusInCart response:', menusResponse)
-          
-          if (menusResponse[0]?.menus) {
-            console.log('Menus in cart:', menusResponse[0].menus)
-            
-            // Test getMenuDetails for each menu
-            for (const menuId of menusResponse[0].menus) {
-              console.log(`Testing getMenuDetails for menu: ${menuId}`)
-              const menuDetails = await menuCollectionService.getMenuDetails(menuId)
-              console.log(`Menu details for ${menuId}:`, menuDetails)
-            }
-          }
-        }
-        
-        // Test getMenuByDate for each day in the week
-        console.log('=== TESTING MENU BY DATE ===')
-        for (const date of weekDatesArray) {
-          const dateStr = formatDate(date)
-          try {
-            const menuResponse = await menuCollectionService.getMenuByDate(dateStr)
-            console.log(`Menu for ${dateStr}:`, menuResponse)
-          } catch (err) {
-            console.log(`No menu for ${dateStr}:`, err.message)
-          }
-        }
-        
-      } catch (err) {
-        console.error('Error testing APIs:', err)
-      }
-      
-      // Check if 10/30/25 is in the current week
-      const targetDate = new Date('2025-10-30')
-      const weekStart = new Date(currentWeekStart.value)
-      const weekEnd = new Date(weekStart)
-      weekEnd.setUTCDate(weekStart.getUTCDate() + 6)
-      
-      console.log('Target Date (10/30/25):', targetDate)
-      console.log('Week Range:', weekStart, 'to', weekEnd)
-      console.log('Is 10/30/25 in current week?', targetDate >= weekStart && targetDate <= weekEnd)
-      
-      alert(`Debug Info logged to console. Check browser console for details.\n\nCurrent Week: ${formatWeekRange(currentWeekStart.value)}\nMenus Found: ${Object.keys(weekMenus.value).length}\nCart ID: ${currentCart.value?.id || 'None'}\nTarget Date 10/30/25 in week: ${targetDate >= weekStart && targetDate <= weekEnd}`)
-    }
-
-    const createExtraMenu = async () => {
-      isLoading.value = true
-      try {
-        const extraMenuId = `extra-${formatDate(currentWeekStart.value)}`
-        const response = await purchaseSystemService.createCompositeOrder(extraMenuId)
-        
-        if (response.compositeOrder) {
-          extraMenu.value = {
-            id: response.compositeOrder,
-            name: 'Extra Items',
-            associateID: extraMenuId
-          }
-        }
-      } catch (err) {
-        console.error('Error creating extra menu:', err)
-        error.value = err.message || 'Failed to create extra menu'
-      } finally {
-        isLoading.value = false
-      }
-    }
-
-    const viewExtraMenu = () => {
-      // This would open a detailed view of the extra menu items
-      console.log('View extra menu:', extraMenu.value)
-    }
-
-    const addItemToExtraMenu = () => {
-      // This would open a form to add items to the extra menu
-      console.log('Add item to extra menu')
-    }
 
     const viewMenu = (menu) => {
-      // This would open a detailed view of the menu
-      console.log('View menu:', menu)
+      // Emit event to navigate to MenuPage with menu ID
+      console.log('viewMenu called with:', menu)
+      console.log('Menu ID:', menu?.id)
+      if (menu?.id) {
+        emit('view-menu', menu.id)
+      } else {
+        console.error('Cannot view menu - no ID found in menu object:', menu)
+        error.value = 'Cannot view menu - invalid menu data'
+      }
     }
 
     const closeAddMenuModal = () => {
@@ -830,41 +850,38 @@ export default {
       currentWeekStart,
       currentCart,
       weekMenus,
-      extraMenu,
       weeklyIngredients,
+      sortedIngredients,
       isLoadingIngredients,
       showAddMenuModal,
       showConfirmModal,
       selectedDate,
       confirmModal,
+      sortByMenu,
+      sortByStore,
       
       // Computed
       dayNames,
       weekDates,
       totalQuantity,
+      ingredientCount,
       
       // Methods
       formatDate,
       formatWeekRange,
       getMenuForDate,
-      getExtraMenuItemCount,
       formatQuantity,
       loadWeeklyIngredients,
+      applySorting,
       loadWeekData,
       goToPreviousWeek,
       goToNextWeek,
       goToCurrentWeek,
       goToSelectedDate,
       goToDateValue,
-      createCartForWeek,
       addMenuToDate,
       confirmAddMenu,
       removeMenuFromCart,
-      viewCartDetails,
-      debugWeekData,
-      createExtraMenu,
-      viewExtraMenu,
-      addItemToExtraMenu,
       viewMenu,
       closeAddMenuModal,
       closeConfirmModal,
@@ -1115,6 +1132,18 @@ export default {
   font-style: italic;
 }
 
+.recipe-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.25rem 0 0 0;
+  color: var(--primary-color);
+  font-size: 0.9rem;
+}
+
+.recipe-list li {
+  margin: 0.1rem 0;
+}
+
 .menu-actions, .extra-menu-actions {
   display: flex;
   gap: 0.5rem;
@@ -1359,6 +1388,83 @@ export default {
   margin: 0.25rem 0 0 0;
   opacity: 0.9;
   font-size: 0.9rem;
+}
+
+.header-title,
+.header-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.header-controls {
+  align-items: flex-end;
+}
+
+.sorting-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+}
+
+.sort-label {
+  font-weight: 600;
+}
+
+.sort-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.sort-toggle input[type="checkbox"] {
+  cursor: pointer;
+  width: 1.2rem;
+  height: 1.2rem;
+}
+
+.sort-btn {
+  padding: 0.5rem 1rem;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.sort-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: translateY(-1px);
+}
+
+.sort-btn.active {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.7);
+  font-weight: 600;
+}
+
+.sort-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+
+.menu-header {
+  background: linear-gradient(135deg, #e0e0e0 0%, #f0f0f0 100%);
+  border: 2px solid var(--secondary-color);
+}
+
+.menu-header h4 {
+  color: var(--primary-color);
+  font-weight: 700;
+  font-size: 1.1rem;
 }
 
 .loading-ingredients {

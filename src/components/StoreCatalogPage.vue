@@ -2,7 +2,7 @@
   <div class="store-catalog-container">
     <div class="catalog-header">
       <h1>Store Catalog</h1>
-      <p>Manage your ingredient catalog with purchase options and alternative names</p>
+    <p>Manage your entire ingredient catalog with a variety of different purchase options</p>
     </div>
 
     <!-- Search and Filter Section -->
@@ -86,7 +86,7 @@
               <div class="option-details">
                 <span class="quantity">{{ option.quantity }}</span>
                 <span class="units">{{ option.units }}</span>
-                <span class="price">${{ option.price.toFixed(2) }}</span>
+                <span class="price">${{ (Number(option.price) || 0).toFixed(2) }}</span>
                 <span class="store">{{ option.store }}</span>
               </div>
               <div class="option-actions">
@@ -94,14 +94,15 @@
                   v-if="!option.confirmed"
                   @click="confirmPurchaseOption(option.id)"
                   class="confirm-btn"
+                  :disabled="isConfirming(option.id)"
                 >
-                  Confirm
+                  {{ isConfirming(option.id) ? 'Confirming…' : 'Confirm' }}
                 </button>
                 <span v-if="option.confirmed" class="confirmed-badge">✓ Confirmed</span>
-                <button @click="editPurchaseOption(option)" class="edit-option-btn">
+                <button @click="editPurchaseOption(option)" class="edit-option-btn" :disabled="isConfirming(option.id)">
                   Edit
                 </button>
-                <button @click="removePurchaseOption(item.id, option.id)" class="remove-option-btn">
+                <button @click="removePurchaseOption(item.id, option.id)" class="remove-option-btn" :disabled="isConfirming(option.id)">
                   Remove
                 </button>
               </div>
@@ -299,7 +300,7 @@
                 <div class="option-info">
                   <span class="quantity">{{ option.quantity }}</span>
                   <span class="units">{{ option.units }}</span>
-                  <span class="price">${{ option.price.toFixed(2) }}</span>
+                  <span class="price">${{ (Number(option.price) || 0).toFixed(2) }}</span>
                   <span class="store">{{ option.store }}</span>
                 </div>
                 <div class="option-actions">
@@ -307,14 +308,15 @@
                     v-if="!option.confirmed"
                     @click="confirmPurchaseOption(option.id)"
                     class="confirm-btn"
+                    :disabled="isConfirming(option.id)"
                   >
-                    Confirm
+                    {{ isConfirming(option.id) ? 'Confirming…' : 'Confirm' }}
                   </button>
                   <span v-if="option.confirmed" class="confirmed-badge">✓ Confirmed</span>
-                  <button @click="editPurchaseOption(option)" class="edit-option-btn">
+                  <button @click="editPurchaseOption(option)" class="edit-option-btn" :disabled="isConfirming(option.id)">
                     Edit
                   </button>
-                  <button @click="removePurchaseOption(editingItem.id, option.id)" class="remove-option-btn">
+                  <button @click="removePurchaseOption(editingItem.id, option.id)" class="remove-option-btn" :disabled="isConfirming(option.id)">
                     Remove
                   </button>
                 </div>
@@ -334,6 +336,23 @@
         </div>
         
         <form @submit.prevent="handleAddPurchaseOption" class="add-purchase-option-form">
+          <div class="form-group">
+            <label for="price">Price *</label>
+            <input
+              id="price"
+              v-model.number="newPurchaseOptionForm.price"
+              type="number"
+              step="0.01"
+              min="0"
+              required
+              :disabled="addPurchaseOptionLoading"
+              placeholder="Enter price"
+              class="form-input"
+              :class="{ 'error': addPurchaseOptionErrors.price }"
+            />
+            <span v-if="addPurchaseOptionErrors.price" class="error-message">{{ addPurchaseOptionErrors.price }}</span>
+          </div>
+          
           <div class="form-group">
             <label for="quantity">Quantity *</label>
             <input
@@ -372,24 +391,7 @@
             </select>
             <span v-if="addPurchaseOptionErrors.units" class="error-message">{{ addPurchaseOptionErrors.units }}</span>
           </div>
-          
-          <div class="form-group">
-            <label for="price">Price *</label>
-            <input
-              id="price"
-              v-model.number="newPurchaseOptionForm.price"
-              type="number"
-              step="0.01"
-              min="0"
-              required
-              :disabled="addPurchaseOptionLoading"
-              placeholder="Enter price"
-              class="form-input"
-              :class="{ 'error': addPurchaseOptionErrors.price }"
-            />
-            <span v-if="addPurchaseOptionErrors.price" class="error-message">{{ addPurchaseOptionErrors.price }}</span>
-          </div>
-          
+
           <div class="form-group">
             <label for="store">Store *</label>
             <select
@@ -439,6 +441,22 @@
         
         <form @submit.prevent="handleUpdatePurchaseOption" class="edit-purchase-option-form">
           <div class="form-group">
+            <label for="edit-price">Price *</label>
+            <input
+              id="edit-price"
+              v-model.number="editingPurchaseOptionForm.price"
+              type="number"
+              step="0.01"
+              min="0"
+              required
+              :disabled="updatePurchaseOptionLoading"
+              class="form-input"
+              :class="{ 'error': updatePurchaseOptionErrors.price }"
+            />
+            <span v-if="updatePurchaseOptionErrors.price" class="error-message">{{ updatePurchaseOptionErrors.price }}</span>
+          </div>
+          
+          <div class="form-group">
             <label for="edit-quantity">Quantity *</label>
             <input
               id="edit-quantity"
@@ -475,23 +493,7 @@
             </select>
             <span v-if="updatePurchaseOptionErrors.units" class="error-message">{{ updatePurchaseOptionErrors.units }}</span>
           </div>
-          
-          <div class="form-group">
-            <label for="edit-price">Price *</label>
-            <input
-              id="edit-price"
-              v-model.number="editingPurchaseOptionForm.price"
-              type="number"
-              step="0.01"
-              min="0"
-              required
-              :disabled="updatePurchaseOptionLoading"
-              class="form-input"
-              :class="{ 'error': updatePurchaseOptionErrors.price }"
-            />
-            <span v-if="updatePurchaseOptionErrors.price" class="error-message">{{ updatePurchaseOptionErrors.price }}</span>
-          </div>
-          
+
           <div class="form-group">
             <label for="edit-store">Store *</label>
             <select
@@ -617,6 +619,74 @@ export default {
     const updatePurchaseOptionLoading = ref(false)
 
     const deleteItemLoading = ref(false)
+    // Track per-purchase-option confirm loading
+    const confirmingOptionIds = reactive(new Set())
+    const isConfirming = (purchaseOptionId) => confirmingOptionIds.has(purchaseOptionId)
+
+    const mutatePurchaseOption = (itemId, optionId, mutator) => {
+      const applyMutation = (purchaseOptions = []) => {
+        const target = purchaseOptions.find(po => po.id === optionId)
+        if (target) {
+          mutator(target)
+        }
+      }
+
+      const catalogItem = items.value.find(item => item.id === itemId)
+      if (catalogItem) {
+        applyMutation(catalogItem.purchaseOptions)
+      }
+
+      if (editingItem.value?.id === itemId) {
+        applyMutation(editingItem.value.purchaseOptions)
+      }
+
+      if (editingPurchaseOption.value?.id === optionId) {
+        mutator(editingPurchaseOption.value)
+      }
+
+      filterItems()
+    }
+
+    const addPurchaseOptionLocally = (itemId, option) => {
+      const inject = (collection = []) => {
+        collection.unshift(option)
+      }
+
+      const catalogItem = items.value.find(item => item.id === itemId)
+      if (catalogItem) {
+        inject(catalogItem.purchaseOptions)
+      }
+
+      if (editingItem.value?.id === itemId) {
+        inject(editingItem.value.purchaseOptions)
+      }
+
+      filterItems()
+    }
+
+    const removePurchaseOptionLocally = (itemId, optionId) => {
+      const strip = (collection = []) => {
+        const index = collection.findIndex(po => po.id === optionId)
+        if (index !== -1) {
+          collection.splice(index, 1)
+        }
+      }
+
+      const catalogItem = items.value.find(item => item.id === itemId)
+      if (catalogItem) {
+        strip(catalogItem.purchaseOptions)
+      }
+
+      if (editingItem.value?.id === itemId) {
+        strip(editingItem.value.purchaseOptions)
+      }
+
+      if (editingPurchaseOption.value?.id === optionId) {
+        editingPurchaseOption.value = null
+      }
+
+      filterItems()
+    }
 
     // Editing states
     const editingItem = ref(null)
@@ -721,33 +791,50 @@ export default {
     }
 
     const loadItems = async () => {
+      console.log('[StoreCatalog] loadItems:start')
       loading.value = true
       clearError()
 
       try {
         const response = await storeCatalogService.getAllItems()
-        const itemIds = response[0]?.items || []
+        console.log('[StoreCatalog] getAllItems response:', response)
+        const root = Array.isArray(response) ? response[0] : response
+        const itemIds = root?.items || []
+        console.log('[StoreCatalog] itemIds:', itemIds)
 
         // Load detailed information for each item
         const itemsWithDetails = await Promise.all(
           itemIds.map(async (itemId) => {
             try {
+              console.log(`[StoreCatalog] loading item ${itemId}`)
               const [namesResponse, purchaseOptionsResponse] = await Promise.all([
                 storeCatalogService.getItemNames(itemId),
                 storeCatalogService.getItemPurchaseOptions(itemId)
               ])
+              console.log(`[StoreCatalog] item ${itemId} namesResponse:`, namesResponse)
+              console.log(`[StoreCatalog] item ${itemId} purchaseOptionsResponse:`, purchaseOptionsResponse)
 
-              const names = namesResponse[0]?.names || []
-              const purchaseOptionIds = purchaseOptionsResponse[0]?.purchaseOptions || []
+              const namesRoot = Array.isArray(namesResponse) ? namesResponse[0] : namesResponse
+              const poRoot = Array.isArray(purchaseOptionsResponse) ? purchaseOptionsResponse[0] : purchaseOptionsResponse
+              const names = namesRoot?.names || []
+              const purchaseOptionIds = poRoot?.purchaseOptions || []
+              console.log(`[StoreCatalog] item ${itemId} names:`, names)
+              console.log(`[StoreCatalog] item ${itemId} purchaseOptionIds:`, purchaseOptionIds)
 
               // Load purchase option details
               const purchaseOptions = await Promise.all(
                 purchaseOptionIds.map(async (optionId) => {
                   try {
+                    console.log(`  [StoreCatalog] loading purchase option ${optionId}`)
                     const detailsResponse = await storeCatalogService.getPurchaseOptionDetails(optionId)
+                    const rawDetails = Array.isArray(detailsResponse) ? detailsResponse[0] : detailsResponse
+                    const detailsRoot = rawDetails && typeof rawDetails === 'object' ? rawDetails : {}
+                    const priceNum = Number(detailsRoot?.price ?? 0)
+                    console.log(`  [StoreCatalog] purchase option ${optionId} details:`, detailsRoot)
                     return {
                       id: optionId,
-                      ...detailsResponse[0]
+                      ...detailsRoot,
+                      price: isNaN(priceNum) ? 0 : priceNum
                     }
                   } catch (error) {
                     console.error(`Error loading purchase option ${optionId}:`, error)
@@ -768,13 +855,16 @@ export default {
             }
           })
         )
+        console.log('[StoreCatalog] itemsWithDetails:', itemsWithDetails)
 
         items.value = itemsWithDetails.filter(item => item !== null)
         filteredItems.value = items.value
+        console.log('[StoreCatalog] items set:', items.value)
       } catch (error) {
         console.error('Error loading items:', error)
         errorMessage.value = error.message || 'Failed to load items'
       } finally {
+        console.log('[StoreCatalog] loadItems:finish')
         loading.value = false
       }
     }
@@ -816,6 +906,10 @@ export default {
       clearAddPurchaseOptionErrors()
 
       try {
+        if (!editingItem.value) {
+          throw new Error('No item selected for adding a purchase option')
+        }
+
         const response = await storeCatalogService.addPurchaseOption(
           editingItem.value.id,
           newPurchaseOptionForm.quantity,
@@ -825,9 +919,22 @@ export default {
         )
         
         if (response.purchaseOption) {
+          const newOptionId = response.purchaseOption
+          const detailsResponse = await storeCatalogService.getPurchaseOptionDetails(newOptionId)
+          const rawDetails = Array.isArray(detailsResponse) ? detailsResponse[0] : detailsResponse
+          const normalized = {
+            id: newOptionId,
+            quantity: Number(rawDetails?.quantity ?? newPurchaseOptionForm.quantity) || 0,
+            units: rawDetails?.units ?? newPurchaseOptionForm.units.trim(),
+            price: Number(rawDetails?.price ?? newPurchaseOptionForm.price) || 0,
+            store: rawDetails?.store ?? newPurchaseOptionForm.store.trim(),
+            confirmed: !!rawDetails?.confirmed
+          }
+
+          addPurchaseOptionLocally(editingItem.value.id, normalized)
+
           successMessage.value = 'Purchase option added successfully!'
           closeAddPurchaseOptionModal()
-          await loadItems()
         } else {
           throw new Error('Invalid response from server')
         }
@@ -852,9 +959,19 @@ export default {
           storeCatalogService.updatePurchaseOptionStore(editingPurchaseOption.value.id, editingPurchaseOptionForm.store.trim())
         ])
         
+        mutatePurchaseOption(
+          editingItem.value.id,
+          editingPurchaseOption.value.id,
+          (option) => {
+            option.quantity = editingPurchaseOptionForm.quantity
+            option.units = editingPurchaseOptionForm.units.trim()
+            option.price = Number(editingPurchaseOptionForm.price) || 0
+            option.store = editingPurchaseOptionForm.store.trim()
+          }
+        )
+
         successMessage.value = 'Purchase option updated successfully!'
         closeEditPurchaseOptionModal()
-        await loadItems()
       } catch (error) {
         console.error('Update purchase option error:', error)
         updatePurchaseOptionErrorMessage.value = error.message || 'Failed to update purchase option'
@@ -911,12 +1028,27 @@ export default {
 
     const confirmPurchaseOption = async (purchaseOptionId) => {
       try {
+        confirmingOptionIds.add(purchaseOptionId)
         await storeCatalogService.confirmPurchaseOption(purchaseOptionId)
-        successMessage.value = 'Purchase option confirmed!'
-        await loadItems()
+
+        // Update only the targeted option locally
+        for (const catalogItem of items.value) {
+          const opt = catalogItem.purchaseOptions?.find(po => po.id === purchaseOptionId)
+          if (opt) {
+            opt.confirmed = true
+            break
+          }
+        }
+        if (editingItem.value) {
+          const opt = editingItem.value.purchaseOptions?.find(po => po.id === purchaseOptionId)
+          if (opt) opt.confirmed = true
+        }
+
       } catch (error) {
         console.error('Confirm purchase option error:', error)
         errorMessage.value = error.message || 'Failed to confirm purchase option'
+      } finally {
+        confirmingOptionIds.delete(purchaseOptionId)
       }
     }
 
@@ -924,7 +1056,7 @@ export default {
       try {
         await storeCatalogService.removePurchaseOption(itemId, purchaseOptionId)
         successMessage.value = 'Purchase option removed successfully!'
-        await loadItems()
+        removePurchaseOptionLocally(itemId, purchaseOptionId)
       } catch (error) {
         console.error('Remove purchase option error:', error)
         errorMessage.value = error.message || 'Failed to remove purchase option'
@@ -1093,6 +1225,7 @@ export default {
       removeAlternativeName,
       confirmPurchaseOption,
       removePurchaseOption,
+      isConfirming,
 
       // Modal handlers
       closeAddItemModal,
@@ -1521,6 +1654,8 @@ export default {
   font-weight: 600;
 }
 
+/* removed confirming spinner styles to restore original flow */
+
 .option-actions {
   display: flex;
   gap: 0.5rem;
@@ -1703,22 +1838,10 @@ export default {
 
 /* Select dropdown styling */
 select.form-input {
-  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
-  background-position: right 0.5rem center;
-  background-repeat: no-repeat;
-  background-size: 1.5em 1.5em;
   padding-right: 2.5rem;
-  appearance: none;
-  cursor: pointer;
-}
-
-select.form-input:focus {
-  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%230557a3' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
-}
-
-select.form-input:disabled {
-  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%9ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e");
-  cursor: not-allowed;
+  -webkit-appearance: menulist;
+  -moz-appearance: menulist;
+  appearance: menulist;
 }
 
 .error-message {

@@ -19,11 +19,14 @@ const apiClient = axios.create({
   }
 })
 
-// Request interceptor for logging
+// Request interceptor (quiet by default; flip DEBUG=true to enable)
+const DEBUG = false
 apiClient.interceptors.request.use(
   (config) => {
-    console.log(`Making ${config.method?.toUpperCase()} request to: ${config.url}`)
-    console.log('Request config:', config)
+    if (DEBUG) {
+      console.log(`Making ${config.method?.toUpperCase()} request to: ${config.url}`)
+      console.log('Request config:', config)
+    }
     return config
   },
   (error) => {
@@ -35,7 +38,7 @@ apiClient.interceptors.request.use(
 // Response interceptor for error handling
 apiClient.interceptors.response.use(
   (response) => {
-    console.log('Response received:', response)
+    if (DEBUG) console.log('Response received:', response)
     return response
   },
   (error) => {

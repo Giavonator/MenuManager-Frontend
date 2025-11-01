@@ -5,8 +5,13 @@
 
 import axios from 'axios'
 
-// Use proxy in development, direct URL in production
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ? '' : 'http://localhost:8000'
+// Resolve API base URL
+// Priority:
+// 1) Explicit env var VITE_API_BASE_URL (for deployed/staging backends)
+// 2) Empty base in DEV so Vite proxy (vite.config.js) can forward to backend
+// 3) Fallback to localhost:8000 when not in DEV and no env is provided
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? '' : 'http://localhost:8000')
 
 // Create axios instance with default configuration
 const apiClient = axios.create({

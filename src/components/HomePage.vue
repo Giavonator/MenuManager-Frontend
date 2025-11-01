@@ -18,13 +18,13 @@
               Explore Features
             </button>
             <button class="btn btn-secondary" @click="scrollToCommunity">
-              Learn More
+              History
             </button>
           </div>
         </div>
         <div class="hero-visual">
           <div class="visual-card">
-            <div class="card-icon">🍽️</div>
+            <div class="card-icon"><img src="/lavachefolle.png" alt="La Vache Folle" /></div>
             <h3>Smart Planning</h3>
             <p>Intelligent menu organization</p>
           </div>
@@ -36,8 +36,8 @@
     <section class="features" ref="featuresSection">
       <div class="container">
         <div class="section-header">
-          <h2>Everything You Need for Perfect Meal Planning</h2>
-          <p>From recipe creation to weekly cart organization, MenuManager has you covered</p>
+          <h2>Everything Needed for Perfect Meal Planning</h2>
+          <p class="section-subtitle">From recipe management to cart organization, Menu Manager has you covered!</p>
         </div>
         
         <div class="features-grid">
@@ -59,15 +59,19 @@
         <div class="community-content">
           <div class="community-header">
             <div class="community-text-header">
-              <h2>La Maison Française</h2>
+              <div class="community-title">
+                <img class="title-icon" src="/lavachefolle.png" alt="La Vache Folle" />
+                <h2>La Maison Française</h2>
+              </div>
+              <div class="title-underline"></div>
               <p class="community-intro">
-                MenuManager draws inspiration from the vibrant cooking community at MIT's French House, 
-                where +30 undergraduate students live together and share their passion for French culture 
-                and collaborative cooking. This unique living group has created a tight-knit community where 
-                cooking becomes more than just meal preparation—it's a way to build lasting friendships, 
-                experiment with new cuisines, and create a home away from home. Through their innovative 
-                cookteam system and shared meal traditions, French House demonstrates how food can bring 
-                people together and foster a sense of belonging that extends far beyond the kitchen.
+                Menu Manager draws inspiration from the vibrant cooking community at MIT's French House, where +30 undergraduate students live together and share their passion for French culture and collaborative cooking.
+              </p>
+              <p class="community-intro">
+                This unique living group has created a tight-knit community where cooking becomes more than just meal preparation—it's a way to build lasting friendships, experiment with new cuisines, and create a home away from home.
+              </p>
+              <p class="community-intro">
+                Through their innovative cookteam system and shared meal traditions, French House demonstrates how food can bring people together and foster a sense of belonging that extends far beyond the kitchen.
               </p>
             </div>
             <div class="community-visual">
@@ -89,32 +93,6 @@
           </div>
           
           <div class="community-content-body">
-            <div class="french-house-story">
-              <h3>🏠 The French House Story</h3>
-              <p>
-                At French House, residents cook together Sunday through Friday, with each member assigned 
-                to a 5-6 person cookteam. One member "cheffs" each week, providing recipes for their team 
-                to prepare during 4-7 PM cooking sessions. This creates a tight-knit community where 
-                cooking becomes a way to experiment with new dishes and share tastes of home.
-              </p>
-              <div class="story-quote">
-                <blockquote>
-                  "Spending 3 hours a week cooking with other people is a great way to get to know other 
-                  members of the house, and sharing a homemade meal with the rest of the house is the 
-                  perfect way to end the day."
-                </blockquote>
-                <cite>— La Maison Française, MIT</cite>
-              </div>
-              
-              <div class="story-quote">
-                <blockquote>
-                  "For many of us, French House has become a home away from home. We're a very tight-knit 
-                  community and many of us have found our best friends at MIT in the house."
-                </blockquote>
-                <cite>— La Maison Française, MIT</cite>
-              </div>
-            </div>
-
             <div class="cooking-details">
               <h3>🍳 How French House Cooking Works</h3>
               <div class="cooking-info-grid">
@@ -151,6 +129,41 @@
                   <p>Collective cookbook of family recipes and cultural dishes</p>
                 </div>
               </div>
+            </div>
+
+            <!-- Quotes + Photo Row (same block) -->
+            <div class="bottom-grid">
+              <!-- Quotes Left -->
+              <div class="french-house-story">
+                <h3 class="story-title">💬 French House Quotes</h3>
+                <div class="story-title-underline"></div>
+                <div class="story-quote">
+                  <blockquote>
+                    "Spending 3 hours a week cooking with other people is a great way to get to know other 
+                    members of the house, and sharing a homemade meal with the rest of the house is the 
+                    perfect way to end the day."
+                  </blockquote>
+                  <cite>— La Maison Française, MIT</cite>
+                </div>
+                <div class="story-quote">
+                  <blockquote>
+                    "For many of us, French House has become a home away from home. We're a very tight-knit 
+                    community and many of us have found our best friends at MIT in the house."
+                  </blockquote>
+                  <cite>— La Maison Française, MIT</cite>
+                </div>
+              </div>
+
+              <!-- Photo Right -->
+              <div class="photo-card">
+            <h3>La Maison Français Dîner 2025</h3>
+            <div class="photo-underline"></div>
+                <div class="photo-img-wrap">
+                  <a href="https://web.mit.edu/lmf/www/" target="_blank" rel="noopener noreferrer">
+                    <img src="/lmf.jpg" alt="La Maison Française Dîner 2025" />
+                  </a>
+                </div>
+          </div>
             </div>
           </div>
         </div>
@@ -352,6 +365,17 @@ export default {
 .card-icon {
   font-size: 3rem;
   margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-icon img {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
 }
 
 .visual-card h3 {
@@ -393,7 +417,7 @@ export default {
   color: var(--light-french-blue);
   font-size: 1.2rem;
   margin: 0;
-  max-width: 600px;
+  max-width: none; /* allow single-line if space permits */
   margin-left: auto;
   margin-right: auto;
 }
@@ -507,7 +531,7 @@ export default {
 
 .community-content-body {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 3rem;
   align-items: start;
 }
@@ -517,6 +541,38 @@ export default {
   border-radius: 12px;
   padding: 2rem;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  position: relative;
+  /* French flag tricolor on left */
+  background-image: linear-gradient(to right,
+    var(--french-blue) 0 4px,
+    var(--white) 4px 7px,
+    var(--french-red) 7px 11px,
+    transparent 11px);
+  background-repeat: no-repeat;
+  background-size: 11px 100%;
+  background-position: left top;
+}
+
+.community-title {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.community-title .title-icon {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 6px;
+  display: block;
+  transform: translateY(0);
+}
+
+.title-underline {
+  height: 2px;
+  width: 80px;
+  background: var(--light-french-blue);
+  margin: 0.5rem 0 1rem 0;
 }
 
 .community-text-header h2 {
@@ -534,11 +590,21 @@ export default {
 }
 
 .french-house-story {
-  background: rgba(255, 255, 255, 0.5);
+  background: var(--white);
   border-radius: 12px;
-  padding: 1.5rem;
+  padding: 1.5rem 1.5rem 1.5rem 1.5rem;
   margin: 2rem 0;
-  border-left: 4px solid var(--light-french-blue);
+  text-align: center;
+  position: relative;
+  /* triple tricolor stripe (blue | white | red) on the far left */
+  background-image: linear-gradient(to right,
+    var(--french-blue) 0 4px,
+    var(--white) 4px 7px,
+    var(--french-red) 7px 11px,
+    transparent 11px);
+  background-repeat: no-repeat;
+  background-size: 11px 100%;
+  background-position: left top;
 }
 
 .french-house-story h3 {
@@ -558,13 +624,13 @@ export default {
 .story-quote {
   background: rgba(255, 255, 255, 0.7);
   border-radius: 8px;
-  padding: 1.5rem;
-  margin-top: 1.5rem;
-  border-left: 3px solid var(--french-red);
+  padding: 1rem;
+  margin-top: 0.75rem;
+  border-left: none;
 }
 
 .story-quote blockquote {
-  color: var(--light-french-red);
+  color: #6b7280; /* gray to match schedule sections */
   font-size: 1rem;
   font-style: italic;
   line-height: 1.5;
@@ -572,21 +638,69 @@ export default {
   position: relative;
 }
 
-.story-quote blockquote::before {
-  content: '"';
-  font-size: 2rem;
-  color: var(--light-french-blue);
-  position: absolute;
-  top: -5px;
-  left: -5px;
-  opacity: 0.3;
-}
+.story-quote blockquote::before { content: none; }
 
 .story-quote cite {
-  color: var(--light-french-red);
+  color: #6b7280;
   font-size: 0.85rem;
   font-weight: 500;
   font-style: normal;
+}
+
+.story-title { margin: 0; }
+.story-title-underline {
+  height: 2px;
+  width: 80px;
+  background: var(--light-french-blue);
+  margin: 0.5rem auto 1rem auto; /* centered */
+}
+
+.bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  align-items: stretch;
+}
+
+/* Make quotes and photo cards equal height in the row */
+.bottom-grid > .french-house-story,
+.bottom-grid > .photo-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  margin: 0; /* normalize top alignment between cards */
+}
+
+.photo-card {
+  background: var(--white);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 15px rgba(18, 34, 116, 0.1);
+  position: relative;
+  /* French flag tricolor on left */
+  background-image: linear-gradient(to right,
+    var(--french-blue) 0 4px,
+    var(--white) 4px 7px,
+    var(--french-red) 7px 11px,
+    transparent 11px);
+  background-repeat: no-repeat;
+  background-size: 11px 100%;
+  background-position: left top;
+  display: flex;
+  flex-direction: column;
+}
+
+.photo-card h3 { margin: 0; color: var(--french-blue); text-align: center; }
+.photo-underline { height: 2px; width: 80px; background: var(--light-french-blue); margin: 0.5rem auto 1rem auto; }
+.photo-img-wrap { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; }
+.photo-card img { max-width: 100%; max-height: 100%; width: auto; height: auto; border-radius: 10px; display: block; object-fit: cover; }
+
+.lmf-photo {
+  margin-top: 1.5rem;
+  max-width: 100%;
+  height: auto;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
 }
 
 
@@ -596,6 +710,16 @@ export default {
   padding: 2rem;
   margin: 2rem 0;
   box-shadow: 0 4px 15px rgba(18, 34, 116, 0.1);
+  position: relative;
+  /* French flag tricolor on left */
+  background-image: linear-gradient(to right,
+    var(--french-blue) 0 4px,
+    var(--white) 4px 7px,
+    var(--french-red) 7px 11px,
+    transparent 11px);
+  background-repeat: no-repeat;
+  background-size: 11px 100%;
+  background-position: left top;
 }
 
 .cooking-details h3 {
@@ -608,7 +732,7 @@ export default {
 
 .cooking-info-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 1.5rem;
 }
 
@@ -874,7 +998,7 @@ export default {
   }
 
   .cooking-info-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
     gap: 1rem;
   }
 

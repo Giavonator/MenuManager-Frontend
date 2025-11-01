@@ -101,7 +101,7 @@
                 <div class="recipe-meta">
                   <span class="scaling-factor">Scaling: {{ recipe.scalingFactor }}x</span>
                   <span class="serving-quantity">{{ recipe.servingQuantity }} servings</span>
-                  <span class="dish-type">{{ recipe.dishType }}</span>
+                  <span v-if="recipe.dishType" class="dish-type">{{ recipe.dishType }}</span>
                 </div>
               </div>
               <div v-if="isEditing" class="recipe-actions">
@@ -155,28 +155,31 @@
     <!-- Add Recipe Modal -->
     <div v-if="showAddRecipeModal" class="modal-overlay" @click="closeAddRecipeModal">
       <div class="modal-content large-modal" @click.stop>
-        <div class="modal-header">
-          <h3>Add Recipe to Menu</h3>
+        <div class="modal-header add-recipe-header">
+          <div class="add-recipe-header-main">
+            <h3 class="add-recipe-title">Add Recipe to Menu</h3>
+            <div class="add-recipe-header-tabs prominent-tabs">
+              <button 
+                @click="addRecipeMode = 'existing'" 
+                :class="{ active: addRecipeMode === 'existing' }"
+                class="tab-btn prominent"
+              >
+                Use Existing Recipe
+              </button>
+              <button 
+                @click="addRecipeMode = 'new'" 
+                :class="{ active: addRecipeMode === 'new' }"
+                class="tab-btn prominent"
+              >
+                Create New Recipe
+              </button>
+            </div>
+          </div>
           <button @click="closeAddRecipeModal" class="close-btn">&times;</button>
         </div>
         
         <div class="modal-body">
-          <div class="add-recipe-tabs">
-            <button 
-              @click="addRecipeMode = 'existing'" 
-              :class="{ active: addRecipeMode === 'existing' }"
-              class="tab-btn"
-            >
-              Use Existing Recipe
-            </button>
-            <button 
-              @click="addRecipeMode = 'new'" 
-              :class="{ active: addRecipeMode === 'new' }"
-              class="tab-btn"
-            >
-              Create New Recipe
-            </button>
-          </div>
+          
 
           <!-- Existing Recipe Selection -->
           <div v-if="addRecipeMode === 'existing'" class="existing-recipe-section">
@@ -185,7 +188,7 @@
               <select 
                 id="recipe-select"
                 v-model="selectedRecipeId" 
-                class="form-select"
+                class="form-select modern-select"
               >
                 <option value="">Choose a recipe...</option>
                 <option 
@@ -261,80 +264,84 @@
               </div>
             </div>
             
-            <div class="form-group">
-              <label for="instructions">Instructions</label>
-              <textarea 
-                id="instructions"
-                v-model="newRecipe.instructions" 
-                class="form-textarea"
-                rows="4"
-                placeholder="Enter cooking instructions..."
-              ></textarea>
-            </div>
+            <div class="instructions-ingredients-grid">
+              <div class="form-group">
+                <label for="instructions">Instructions</label>
+                <textarea 
+                  id="instructions"
+                  v-model="newRecipe.instructions" 
+                  class="form-textarea"
+                  rows="6"
+                  placeholder="Enter cooking instructions..."
+                ></textarea>
+              </div>
 
-            <!-- Ingredients Management -->
-            <div class="ingredients-management">
-              <h4>Ingredients</h4>
-              
-              <!-- Initial Add Ingredient Button -->
-              <div v-if="!showIngredientForm" class="add-ingredient-initial">
-                <button @click="showIngredientForm = true" class="add-new-ingredient-btn">
-                  + Add New Ingredient
-                </button>
-              </div>
-              
-              <!-- Ingredient Form -->
-              <div v-if="showIngredientForm" class="add-ingredient-form">
-                <input 
-                  v-model="newIngredient.name" 
-                  type="text" 
-                  placeholder="Ingredient name"
-                  class="form-input ingredient-name-input"
-                />
-                <input 
-                  v-model.number="newIngredient.quantity" 
-                  type="number" 
-                  step="0.1" 
-                  min="0.1"
-                  placeholder="Quantity"
-                  class="form-input ingredient-quantity-input"
-                />
-                <input 
-                  v-model="newIngredient.units" 
-                  type="text" 
-                  placeholder="Units"
-                  class="form-input ingredient-units-input"
-                />
+              <!-- Ingredients Management -->
+              <div class="ingredients-management">
+                <h4>Ingredients</h4>
+                
+                <!-- Initial Add Ingredient Button -->
+                <div v-if="!showIngredientForm" class="add-ingredient-initial">
+                  <button type="button" @click="openAddIngredientForm" class="add-new-ingredient-btn neutral">
+                    + Add New Ingredient
+                  </button>
+                </div>
+                
+                <!-- Ingredient Form -->
+                <div v-if="showIngredientForm" class="add-ingredient-form">
+                  <input 
+                    ref="addIngredientNameInput"
+                    v-model="newIngredient.name" 
+                    type="text" 
+                    placeholder="Ingredient name"
+                    class="form-input ingredient-name-input"
+                  />
+                  <input 
+                    v-model.number="newIngredient.quantity" 
+                    type="number" 
+                    step="0.1" 
+                    min="0.1"
+                    placeholder="Quantity"
+                    class="form-input ingredient-quantity-input"
+                  />
+                  <select 
+                    v-model="newIngredient.units"
+                    class="form-select ingredient-units-input modern-select"
+                  >
+                    <option value="">Units</option>
+                    <option v-for="u in unitOptions" :key="u" :value="u">{{ u }}</option>
+                  </select>
                 <button 
+                  type="button"
                   @click="addIngredient" 
-                  class="add-ingredient-btn"
-                  :disabled="!newIngredient.name || !newIngredient.quantity || !newIngredient.units"
+                  class="add-ingredient-btn add-ingredient-primary"
+                  :disabled="!newIngredient.name?.trim() || newIngredient.quantity <= 0 || !newIngredient.units?.trim()"
                 >
-                  Add Ingredient
+                  Add
                 </button>
-                <button @click="cancelAddIngredient" class="cancel-ingredient-btn">
-                  Cancel
-                </button>
-              </div>
-              
-              <div v-if="newRecipe.ingredients.length > 0" class="ingredients-list">
-                <div 
-                  v-for="(ingredient, index) in newRecipe.ingredients" 
-                  :key="index"
-                  class="ingredient-item"
-                >
-                  <span class="ingredient-quantity">{{ ingredient.quantity }}</span>
-                  <span class="ingredient-units">{{ ingredient.units }}</span>
-                  <span class="ingredient-name">{{ ingredient.name }}</span>
-                  <button @click="removeIngredient(index)" class="remove-ingredient-btn">&times;</button>
+                  <button type="button" @click="cancelAddIngredient" class="cancel-ingredient-btn add-ingredient-danger">
+                    Cancel
+                  </button>
+                </div>
+                
+                <div v-if="newRecipe.ingredients.length > 0" class="ingredients-list">
+                  <div 
+                    v-for="(ingredient, index) in newRecipe.ingredients" 
+                    :key="index"
+                    class="ingredient-item"
+                  >
+                    <span class="ingredient-quantity">{{ ingredient.quantity }}</span>
+                    <span class="ingredient-units">{{ ingredient.units }}</span>
+                    <span class="ingredient-name">{{ ingredient.name }}</span>
+                    <button @click="removeIngredient(index)" class="remove-ingredient-btn">&times;</button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
         
-        <div class="modal-footer">
-          <button @click="closeAddRecipeModal" class="cancel-btn">Cancel</button>
+        <div class="modal-footer add-recipe-footer">
           <button 
             @click="addRecipeToMenu" 
             class="add-btn"
@@ -342,6 +349,7 @@
           >
             {{ isAddingRecipe ? 'Adding...' : 'Add Recipe' }}
           </button>
+          <button @click="closeAddRecipeModal" class="cancel-btn">Cancel</button>
         </div>
       </div>
     </div>
@@ -386,85 +394,92 @@
             />
           </div>
           
-          <div class="form-group">
-            <label for="edit-instructions">Instructions</label>
-            <textarea 
-              id="edit-instructions"
-              v-model="editRecipeForm.instructions" 
-              class="form-textarea"
-              rows="4"
-            ></textarea>
-          </div>
+          <div class="instructions-ingredients-grid">
+            <div class="form-group">
+              <label for="edit-instructions">Instructions</label>
+              <textarea 
+                id="edit-instructions"
+                v-model="editRecipeForm.instructions" 
+                class="form-textarea"
+                rows="6"
+              ></textarea>
+            </div>
 
-          <!-- Edit Ingredients -->
-          <div class="ingredients-management">
-            <h4>Ingredients</h4>
-            
-            <!-- Initial Add Ingredient Button -->
-            <div v-if="!showEditIngredientForm" class="add-ingredient-initial">
-              <button @click="showEditIngredientForm = true" class="add-new-ingredient-btn">
-                + Add New Ingredient
-              </button>
-            </div>
-            
-            <!-- Ingredient Form -->
-            <div v-if="showEditIngredientForm" class="add-ingredient-form">
-              <input 
-                v-model="newIngredient.name" 
-                type="text" 
-                placeholder="Ingredient name"
-                class="form-input ingredient-name-input"
-              />
-              <input 
-                v-model.number="newIngredient.quantity" 
-                type="number" 
-                step="0.1" 
-                min="0.1"
-                placeholder="Quantity"
-                class="form-input ingredient-quantity-input"
-              />
-              <input 
-                v-model="newIngredient.units" 
-                type="text" 
-                placeholder="Units"
-                class="form-input ingredient-units-input"
-              />
-              <button 
-                @click="addIngredientToEdit" 
-                class="add-ingredient-btn"
-                :disabled="!newIngredient.name || !newIngredient.quantity || !newIngredient.units"
-              >
-                Add Ingredient
-              </button>
-              <button @click="cancelAddIngredientToEdit" class="cancel-ingredient-btn">
-                Cancel
-              </button>
-            </div>
-            
-            <div v-if="editRecipeForm.ingredients.length > 0" class="ingredients-list">
-              <div 
-                v-for="(ingredient, index) in editRecipeForm.ingredients" 
-                :key="index"
-                class="ingredient-item"
-              >
+            <!-- Edit Ingredients -->
+            <div class="ingredients-management">
+              <h4>Ingredients</h4>
+              
+              <!-- Initial Add Ingredient Button -->
+              <div v-if="!showEditIngredientForm" class="add-ingredient-initial">
+                <button type="button" @click="openEditIngredientForm" class="add-new-ingredient-btn neutral">
+                  + Add New Ingredient
+                </button>
+              </div>
+              
+              <!-- Ingredient Form -->
+                <div v-if="showEditIngredientForm" class="add-ingredient-form">
+                  <input 
+                    ref="editIngredientNameInput"
+                    v-model="newIngredient.name" 
+                    type="text" 
+                    placeholder="Ingredient name"
+                    class="form-input ingredient-name-input"
+                  />
                 <input 
-                  v-model.number="ingredient.quantity" 
+                  v-model.number="newIngredient.quantity" 
                   type="number" 
                   step="0.1" 
                   min="0.1"
-                  class="form-input small-input"
+                  placeholder="Quantity"
+                  class="form-input ingredient-quantity-input"
                 />
-                <input 
-                  v-model="ingredient.units" 
-                  type="text" 
-                  class="form-input small-input"
-                />
-                <input 
-                  v-model="ingredient.name" 
-                  type="text" 
-                  class="form-input"
-                />
-                <button @click="removeIngredientFromEdit(index)" class="remove-ingredient-btn">&times;</button>
+                <select 
+                  v-model="newIngredient.units" 
+                  class="form-select ingredient-units-input modern-select"
+                >
+                  <option value="">Units</option>
+                  <option v-for="u in unitOptions" :key="u" :value="u">{{ u }}</option>
+                </select>
+                <button 
+                  type="button"
+                  @click="addIngredientToEdit" 
+                  class="add-ingredient-btn add-ingredient-primary"
+                  :disabled="!newIngredient.name || !newIngredient.quantity || !newIngredient.units"
+                >
+                  Add
+                </button>
+                <button type="button" @click="cancelAddIngredientToEdit" class="cancel-ingredient-btn add-ingredient-danger">
+                  Cancel
+                </button>
+              </div>
+              
+              <div v-if="editRecipeForm.ingredients.length > 0" class="ingredients-list">
+                <div 
+                  v-for="(ingredient, index) in editRecipeForm.ingredients" 
+                  :key="index"
+                  class="ingredient-item"
+                >
+                  <input 
+                    v-model.number="ingredient.quantity" 
+                    type="number" 
+                    step="0.1" 
+                    min="0.1"
+                    class="form-input small-input"
+                  />
+                  <select 
+                    v-model="ingredient.units" 
+                    class="form-select small-input"
+                  >
+                    <option value="">Units</option>
+                    <option v-for="u in unitOptions" :key="u" :value="u">{{ u }}</option>
+                  </select>
+                  <input 
+                    v-model="ingredient.name" 
+                    type="text" 
+                    class="form-input"
+                  />
+                  <button @click="removeIngredientFromEdit(index)" class="remove-ingredient-btn">&times;</button>
+                </div>
               </div>
             </div>
           </div>
@@ -521,7 +536,8 @@
 </template>
 
 <script>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { menuCollectionService } from '../services/menuCollectionService.js'
 import { cookBookService } from '../services/cookBookService.js'
 import { authStore } from '../stores/authStore.js'
@@ -567,8 +583,10 @@ export default {
     const scalingFactor = ref(1)
     const newScalingFactor = ref(1)
     const editingRecipe = ref(null)
-    const showIngredientForm = ref(false)
-    const showEditIngredientForm = ref(false)
+const showIngredientForm = ref(false)
+const showEditIngredientForm = ref(false)
+const addIngredientNameInput = ref(null)
+const editIngredientNameInput = ref(null)
     
     // Recipe forms
     const newRecipe = reactive({
@@ -586,6 +604,9 @@ export default {
       instructions: '',
       ingredients: []
     })
+    const unitOptions = [
+      'g','kg','mg','lb','oz','ml','l','tsp','tbsp','cup','pint','quart','gallon','piece','pack','can'
+    ]
     const newIngredient = reactive({
       name: '',
       quantity: 1,
@@ -594,6 +615,7 @@ export default {
     
     // Computed properties
     const currentUser = computed(() => authStore.user)
+    const route = useRoute()
     const isOwner = computed(() => menu.value && currentUser.value && menu.value.owner === currentUser.value.id)
     
     // Methods
@@ -846,17 +868,37 @@ export default {
       addRecipeMode.value = 'existing'
     }
     
-    const addIngredient = () => {
-      if (newIngredient.name && newIngredient.quantity && newIngredient.units) {
-        newRecipe.ingredients.push({ ...newIngredient })
+    function openAddIngredientForm() {
+      console.log('Opening add ingredient form')
+      showIngredientForm.value = true
+      newIngredient.name = ''
+      newIngredient.quantity = 1
+      newIngredient.units = ''
+      nextTick(() => {
+        console.log('Focusing add ingredient input')
+        addIngredientNameInput.value?.focus()
+      })
+    }
+
+    function addIngredient() {
+      console.log('Attempting to add ingredient', JSON.stringify(newIngredient))
+      const name = (newIngredient.name || '').trim()
+      const units = (newIngredient.units || '').trim()
+      const qty = Number(newIngredient.quantity)
+      if (name && units && qty > 0) {
+        console.log('Adding ingredient to newRecipe list')
+        newRecipe.ingredients.push({ name, units, quantity: qty })
         newIngredient.name = ''
         newIngredient.quantity = 1
         newIngredient.units = ''
         showIngredientForm.value = false
+      } else {
+        console.log('Ingredient validation failed', { name, units, qty })
       }
     }
-    
-    const cancelAddIngredient = () => {
+
+    function cancelAddIngredient() {
+      console.log('Cancelling add ingredient form')
       showIngredientForm.value = false
       newIngredient.name = ''
       newIngredient.quantity = 1
@@ -877,17 +919,34 @@ export default {
       showEditRecipeModal.value = true
     }
     
-    const addIngredientToEdit = () => {
+    function addIngredientToEdit() {
+      console.log('Attempting to add ingredient to edit list', JSON.stringify(newIngredient))
       if (newIngredient.name && newIngredient.quantity && newIngredient.units) {
+        console.log('Adding ingredient to editRecipeForm ingredients')
         editRecipeForm.ingredients.push({ ...newIngredient })
         newIngredient.name = ''
         newIngredient.quantity = 1
         newIngredient.units = ''
         showEditIngredientForm.value = false
+      } else {
+        console.log('Edit ingredient validation failed', { name: newIngredient.name, quantity: newIngredient.quantity, units: newIngredient.units })
       }
     }
-    
-    const cancelAddIngredientToEdit = () => {
+
+    function openEditIngredientForm() {
+      console.log('Opening edit ingredient form')
+      showEditIngredientForm.value = true
+      newIngredient.name = ''
+      newIngredient.quantity = 1
+      newIngredient.units = ''
+      nextTick(() => {
+        console.log('Focusing edit ingredient input')
+        editIngredientNameInput.value?.focus()
+      })
+    }
+
+    function cancelAddIngredientToEdit() {
+      console.log('Cancelling edit ingredient form')
       showEditIngredientForm.value = false
       newIngredient.name = ''
       newIngredient.quantity = 1
@@ -1069,8 +1128,12 @@ export default {
     }
     
     // Lifecycle
-    onMounted(() => {
-      loadMenu()
+    onMounted(async () => {
+      await loadMenu()
+      // If navigated with ?edit=1, open directly in edit mode
+      if (route?.query?.edit === '1' || route?.query?.edit === 'true') {
+        enterEditMode()
+      }
     })
     
     // Watch for menuId changes
@@ -1098,6 +1161,8 @@ export default {
       showAddRecipeModal,
       showEditRecipeModal,
       showScalingModal,
+      showIngredientForm,
+      showEditIngredientForm,
       addRecipeMode,
       selectedRecipeId,
       scalingFactor,
@@ -1107,6 +1172,7 @@ export default {
       newRecipeErrors,
       editRecipeForm,
       newIngredient,
+      unitOptions,
       currentUser,
       isOwner,
       
@@ -1117,12 +1183,14 @@ export default {
       saveChanges,
       addRecipeToMenu,
       addIngredient,
+      openAddIngredientForm,
       cancelAddIngredient,
       removeIngredient,
       editRecipe,
       addIngredientToEdit,
       cancelAddIngredientToEdit,
       removeIngredientFromEdit,
+      openEditIngredientForm,
       saveRecipeChanges,
       changeScaling,
       updateScalingFactor,
@@ -1249,13 +1317,37 @@ export default {
   align-items: center;
 }
 
+.edit-actions {
+  display: flex;
+  gap: 1.5rem; /* extra separation between Save and Cancel */
+}
+
 .edit-btn, .save-btn, .cancel-btn {
   padding: 0.75rem 1.5rem;
   border: none;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 500;
-  transition: all 0.3s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Prevent lingering box-shadows after click/focus */
+.edit-btn:focus,
+.save-btn:focus,
+.cancel-btn:focus,
+.edit-btn:active,
+.save-btn:active,
+.cancel-btn:active {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Keep accessible outline only when keyboard focusing */
+.edit-btn:focus-visible,
+.save-btn:focus-visible,
+.cancel-btn:focus-visible {
+  outline: 2px solid rgba(0,0,0,0.25);
+  outline-offset: 2px;
 }
 
 .edit-btn {
@@ -1268,19 +1360,20 @@ export default {
 }
 
 .save-btn {
-  background: #87CEEB;
-  color: #2c3e50;
+  /* French blue */
+  background: #002395;
+  color: #ffffff;
   font-size: 1.1rem;
   padding: 1rem 2rem;
   font-weight: 600;
-  border: 2px solid #5DADE2;
-  box-shadow: 0 4px 8px rgba(135, 206, 235, 0.3);
+  border: none; /* solid fill */
+  box-shadow: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .save-btn:hover:not(:disabled) {
-  background: #5DADE2;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(135, 206, 235, 0.4);
+  background: #001f7a;
+  box-shadow: none;
 }
 
 .save-btn:disabled {
@@ -1291,21 +1384,25 @@ export default {
 }
 
 .cancel-btn {
-  background: #FFB6C1;
-  color: #8B0000;
+  /* French red */
+  background: #ed2939;
+  color: #ffffff;
   font-size: 1.1rem;
   padding: 1rem 2rem;
   font-weight: 600;
-  border: 2px solid #FF69B4;
-  box-shadow: 0 4px 8px rgba(255, 182, 193, 0.3);
+  border: none; /* solid fill */
+  box-shadow: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .cancel-btn:hover {
-  background: #FF69B4;
-  color: white;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(255, 182, 193, 0.4);
+  background: #d21e2e;
+  color: #ffffff;
+  box-shadow: none;
 }
+
+/* Remove any inner focus borders in Firefox */
+button::-moz-focus-inner { border: 0; }
 
 /* Edit Mode Indicator */
 .edit-mode-indicator {
@@ -1532,9 +1629,23 @@ export default {
 }
 
 .ingredients-section h4, .instructions-section h4 {
-  color: var(--secondary-color);
+  color: var(--primary-color);
   margin: 0 0 1rem 0;
   font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.instructions-ingredients-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+.ingredients-management h4,
+.form-group label {
+  color: var(--primary-color);
+  font-weight: 600;
 }
 
 .ingredients-list {
@@ -1701,6 +1812,69 @@ export default {
   color: var(--primary-color);
   border-bottom-color: var(--primary-color);
 }
+/* Prominent tabs styling */
+.prominent-tabs {
+  background: #f7f9fc;
+  border-radius: 10px;
+  padding: 0.25rem;
+  border: 1px solid #e3e8f0;
+}
+.tab-btn.prominent {
+  padding: 0.85rem 1.25rem;
+  font-weight: 600;
+  color: #334155;
+}
+.tab-btn.prominent.active {
+  background: #ffffff;
+  border-radius: 8px;
+  border-bottom-color: transparent;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  color: var(--primary-color);
+}
+
+/* Modernize select */
+.modern-select {
+  appearance: none;
+  background: #ffffff url('data:image/svg+xml;utf8,<svg fill="%23666" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>') no-repeat right 0.75rem center/16px 16px;
+  padding-right: 2.5rem;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  border-radius: 8px;
+}
+.modern-select:focus {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+}
+
+/* Align Add left, Cancel right in add-recipe modal */
+.add-recipe-footer {
+  justify-content: space-between;
+}
+/* Add Recipe header layout */
+.add-recipe-header {
+  align-items: flex-start;
+}
+.add-recipe-header-main {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.add-recipe-title {
+  font-size: 1.6rem;
+  margin: 0;
+}
+.add-recipe-header-tabs {
+  display: flex;
+  gap: 0.5rem;
+}
+
+
+/* Match Add Recipe scale to Cancel */
+.add-btn {
+  font-size: 1.1rem;
+  padding: 1rem 2rem;
+}
 
 .tab-btn:hover {
   color: var(--primary-color);
@@ -1720,30 +1894,29 @@ export default {
   margin-bottom: 1rem;
 }
 
-.add-new-ingredient-btn {
-  background: #17a2b8;
-  color: white;
+.add-new-ingredient-btn.neutral {
+  background: #d1d5db;
+  color: #1f2937;
   border: none;
   padding: 0.75rem 1.5rem;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 500;
   transition: all 0.3s ease;
-  box-shadow: 0 2px 4px rgba(23, 162, 184, 0.3);
+  box-shadow: none;
 }
 
-.add-new-ingredient-btn:hover {
-  background: #138496;
+.add-new-ingredient-btn.neutral:hover {
+  background: #9ca3af;
   transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(23, 162, 184, 0.4);
 }
 
 .add-ingredient-form {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr auto auto;
+  grid-template-columns: 2fr 0.75fr 0.75fr auto auto;
   gap: 0.5rem;
   margin-bottom: 1rem;
-  align-items: end;
+  align-items: center;
 }
 
 .ingredient-name-input {
@@ -1758,24 +1931,25 @@ export default {
   grid-column: 3;
 }
 
+
 .add-ingredient-btn {
   grid-column: 4;
-  background: #17a2b8;
-  color: white;
-  border: none;
-  padding: 0.75rem 1rem;
+  padding: 0.6rem 1.1rem;
   border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
   font-weight: 500;
   transition: all 0.3s ease;
-  box-shadow: 0 2px 4px rgba(23, 162, 184, 0.3);
+  border: none;
 }
 
-.add-ingredient-btn:hover:not(:disabled) {
-  background: #138496;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(23, 162, 184, 0.4);
+.add-ingredient-primary {
+  background: var(--light-french-blue, #4A90E2);
+  color: #ffffff;
+}
+
+.add-ingredient-primary:hover:not(:disabled) {
+  background: #2f78d4;
 }
 
 .add-ingredient-btn:disabled {
@@ -1788,19 +1962,22 @@ export default {
 
 .cancel-ingredient-btn {
   grid-column: 5;
-  background: #6c757d;
-  color: white;
-  border: none;
-  padding: 0.75rem 1rem;
+  padding: 0.6rem 1.1rem;
   border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
   font-weight: 500;
   transition: all 0.3s ease;
+  border: none;
 }
 
-.cancel-ingredient-btn:hover {
-  background: #5a6268;
+.add-ingredient-danger {
+  background: var(--light-french-red, #FF6B6B);
+  color: #ffffff;
+}
+
+.add-ingredient-danger:hover {
+  background: #ff5252;
 }
 
 .remove-ingredient-btn {
@@ -1867,6 +2044,10 @@ export default {
   
   .recipe-actions button {
     flex: 1;
+  }
+
+  .instructions-ingredients-grid {
+    grid-template-columns: 1fr;
   }
   
   .add-ingredient-form {

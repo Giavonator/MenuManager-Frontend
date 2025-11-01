@@ -25,8 +25,7 @@ export const SUPPORTED_STORES = [
   'Giant',
   'Food Lion',
   'Kroger',
-  'Publix',
-  'Other'
+  'Publix'
 ]
 
 // Supported units for purchase options

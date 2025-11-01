@@ -1,0 +1,7 @@
+# User Journey
+
+It’s Tuesday afternoon, and Emma, the head chef for tonight’s cook team, sits down to plan the dinner menu for La Maison Français. Normally she would open a blank Word doc and start writing her five required dishes, but remembers that the house has a new system called *Menu Manager* to help the Food Stewards with the food management process.
+
+Instead, Emma logs into Menu Manager and opens the *Home Page* (see sketch 4.1). Scrolling through the page she is able to see inspiration for the application, and then decides to go to the *Menu Page* to create her menu. She clickes the "Create New Menu" button in the top bar and is redirected to a blank *Menu Page* (sketch 4.2) and starts adding recipes directly. For each dish, she selects ingredients using a text box that allows her to put in the item name, units, and quantity. She continues adding more ingredients and recipes, until her menu is finished.
+
+By the time Emma finishes inputting data into the form, she takes roughly as long as it would have with a Word document. She goes to the *Weekly Cart* page and sees that her menu was added including all of her ingredients. She is happy knowing that she was able to help the *Food Stewards* in simplifying the ingredient aggregation process for them.

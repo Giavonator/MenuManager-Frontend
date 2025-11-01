@@ -17,7 +17,6 @@
           </div>
           <div class="header-center">
             <nav class="navigation">
-              <router-link to="/" class="nav-btn" :class="{ 'active': $route.name === 'home' }">Home</router-link>
               <router-link to="/store-catalog" class="nav-btn" :class="{ 'active': $route.name === 'store-catalog' }">Store Catalog</router-link>
               <router-link to="/menus" class="nav-btn" :class="{ 'active': $route.name === 'menus' }">Menus</router-link>
               <router-link to="/weekly-cart" class="nav-btn" :class="{ 'active': $route.name === 'weekly-cart' }">Weekly Cart</router-link>
@@ -71,8 +70,11 @@ export default {
     }
     
     // Handle menu navigation from child component event
-    const viewMenu = (menuId) => {
-      router.push({ name: 'menu', params: { id: String(menuId) } })
+    const viewMenu = (payload) => {
+      const isObj = payload && typeof payload === 'object'
+      const id = isObj ? String(payload.id) : String(payload)
+      const query = isObj && payload.edit ? { edit: '1' } : {}
+      router.push({ name: 'menu', params: { id }, query })
     }
     
     const backToMenus = () => {
@@ -141,6 +143,8 @@ export default {
   cursor: pointer;
   padding: 0;
   transition: opacity 0.3s ease;
+  text-decoration: none; /* remove default anchor underline/visited styling */
+  display: inline-block;
 }
 
 .logo-btn:hover {
@@ -151,7 +155,7 @@ export default {
   margin: 0;
   font-size: 1.75rem;
   font-weight: 600;
-  color: var(--light-french-blue);
+  color: var(--french-blue-contrast);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
@@ -169,7 +173,7 @@ export default {
 .username {
   font-weight: 500;
   opacity: 0.9;
-  color: var(--light-french-red);
+  color: var(--french-red);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
@@ -205,6 +209,7 @@ export default {
   transition: all 0.3s ease;
   border-radius: 6px;
   opacity: 0.9;
+  text-decoration: none; /* ensure router-link has no underline */
 }
 
 .nav-btn:hover {

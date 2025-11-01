@@ -1,5 +1,5 @@
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Garamond', 'Times New Roman', serif;
   line-height: 1.5;
   font-weight: 400;
 
@@ -11,6 +11,8 @@
   --error-red: #c90000;
   --french-red: #dc143c;
   --french-blue: #002395;
+  /* Slightly lighter blue for better contrast on dark headers */
+  --french-blue-contrast: #1b3db8;
   --light-french-blue: #4a90e2;
   --light-french-red: #ff6b6b;
   --very-dark-blue: #0a0a1a;
@@ -45,6 +47,7 @@ body {
   min-width: 320px;
   min-height: 100vh;
   background: linear-gradient(135deg, var(--white) 0%, var(--secondary-light) 100%);
+  font-family: 'Garamond', 'Times New Roman', serif;
 }
 
 #app {

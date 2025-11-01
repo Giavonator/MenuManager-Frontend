@@ -322,8 +322,8 @@ export default {
     }
     
     const editMenu = (menu) => {
-      // For now, just navigate to the menu page where editing can be done
-      emit('view-menu', menu.id)
+      // Navigate to menu page and open directly in edit mode
+      emit('view-menu', { id: menu.id, edit: true })
     }
     
     const deleteMenu = async (menu) => {
