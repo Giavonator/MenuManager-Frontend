@@ -3,21 +3,10 @@
  * Handles all StoreCatalog-related API calls to the MenuManager backend
  */
 
-import axios from 'axios'
+import { createApiClient } from '../utils/apiClient.js'
 
-// Use proxy in development, direct URL in production
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? '' : 'http://localhost:8000')
-
-// Create axios instance with default configuration
-const apiClient = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000, // 10 second timeout
-  withCredentials: false, // Don't send cookies
-  headers: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  }
-})
+// Create axios instance with default configuration and auth interceptor
+const apiClient = createApiClient()
 
 // Request interceptor (quiet by default; flip DEBUG=true to enable)
 const DEBUG = false
@@ -223,39 +212,20 @@ class StoreCatalogService {
   }
 
   /**
-   * Add an alternative name to an item
+   * Update the name of an item
    * @param {string} item - The item ID
-   * @param {string} name - The alternative name to add
+   * @param {string} name - The new name for the item
    * @returns {Promise<Object>} - The response
    */
-  async addItemName(item, name) {
+  async updateItemName(item, name) {
     try {
-      const response = await apiClient.post('/api/StoreCatalog/addItemName', {
+      const response = await apiClient.post('/api/StoreCatalog/updateItemName', {
         item,
         name
       })
       return response.data
     } catch (error) {
-      console.error('Add item name error:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Remove an alternative name from an item
-   * @param {string} item - The item ID
-   * @param {string} name - The name to remove
-   * @returns {Promise<Object>} - The response
-   */
-  async removeItemName(item, name) {
-    try {
-      const response = await apiClient.post('/api/StoreCatalog/removeItemName', {
-        item,
-        name
-      })
-      return response.data
-    } catch (error) {
-      console.error('Remove item name error:', error)
+      console.error('Update item name error:', error)
       throw error
     }
   }
@@ -311,6 +281,23 @@ class StoreCatalogService {
   }
 
   /**
+   * Get the name of an item
+   * @param {string} item - The item ID
+   * @returns {Promise<Object>} - The response containing the item name
+   */
+  async getItemName(item) {
+    try {
+      const response = await apiClient.post('/api/StoreCatalog/_getItemName', {
+        item
+      })
+      return response.data
+    } catch (error) {
+      console.error('Get item name error:', error)
+      throw error
+    }
+  }
+
+  /**
    * Get item by purchase option
    * @param {string} purchaseOption - The purchase option ID
    * @returns {Promise<Object>} - The response containing the item ID
@@ -323,23 +310,6 @@ class StoreCatalogService {
       return response.data
     } catch (error) {
       console.error('Get item by purchase option error:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Get all names for an item
-   * @param {string} item - The item ID
-   * @returns {Promise<Object>} - The response containing all names
-   */
-  async getItemNames(item) {
-    try {
-      const response = await apiClient.post('/api/StoreCatalog/_getItemNames', {
-        item
-      })
-      return response.data
-    } catch (error) {
-      console.error('Get item names error:', error)
       throw error
     }
   }

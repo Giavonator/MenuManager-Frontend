@@ -3,21 +3,10 @@
  * Handles all MenuCollection-related API calls to the MenuManager backend
  */
 
-import axios from 'axios'
+import { createApiClient } from '../utils/apiClient.js'
 
-// Use proxy in development, direct URL in production
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? '' : 'http://localhost:8000')
-
-// Create axios instance with default configuration
-const apiClient = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000, // 10 second timeout
-  withCredentials: false, // Don't send cookies
-  headers: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  }
-})
+// Create axios instance with default configuration and auth interceptor
+const apiClient = createApiClient()
 
 // Request interceptor for logging
 apiClient.interceptors.request.use(
@@ -216,7 +205,7 @@ class MenuCollectionService {
   }
 
   /**
-   * Returns the menu ID associated with a specific date (from any user)
+   * Returns the menu ID associated with a specific date
    * @param {string} date - The date
    * @returns {Promise<Object>} - The response containing menu ID
    */
@@ -228,6 +217,23 @@ class MenuCollectionService {
       return response.data
     } catch (error) {
       console.error('Get menu by date error:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Deletes a menu from the collection
+   * @param {string} menu - The menu ID
+   * @returns {Promise<Object>} - The response
+   */
+  async deleteMenu(menu) {
+    try {
+      const response = await apiClient.post('/api/MenuCollection/deleteMenu', {
+        menu
+      })
+      return response.data
+    } catch (error) {
+      console.error('Delete menu error:', error)
       throw error
     }
   }

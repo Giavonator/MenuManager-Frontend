@@ -3,26 +3,10 @@
  * Handles all authentication-related API calls to the MenuManager backend
  */
 
-import axios from 'axios'
+import { createApiClient } from '../utils/apiClient.js'
 
-// Resolve API base URL
-// Priority:
-// 1) Explicit env var VITE_API_BASE_URL (for deployed/staging backends)
-// 2) Empty base in DEV so Vite proxy (vite.config.js) can forward to backend
-// 3) Fallback to localhost:8000 when not in DEV and no env is provided
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? '' : 'http://localhost:8000')
-
-// Create axios instance with default configuration
-const apiClient = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000, // 10 second timeout
-  withCredentials: false, // Don't send cookies
-  headers: {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  }
-})
+// Create axios instance with default configuration and auth interceptor
+const apiClient = createApiClient()
 
 // Request interceptor for logging
 apiClient.interceptors.request.use(

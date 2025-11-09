@@ -11,7 +11,16 @@
       <div class="error-message">
         <h3>Error</h3>
         <p>{{ error }}</p>
-        <button @click="loadMenu" class="retry-btn">Retry</button>
+        <button @click="retryLoadMenu" class="retry-btn">Retry</button>
+      </div>
+    </div>
+
+    <!-- Fallback: No menu data available -->
+    <div v-else-if="!menu && !isLoading" class="error-container">
+      <div class="error-message">
+        <h3>Menu Not Found</h3>
+        <p>Unable to load menu data. Please try again.</p>
+        <button @click="retryLoadMenu" class="retry-btn">Retry</button>
       </div>
     </div>
 
@@ -19,31 +28,34 @@
     <div v-else-if="menu" class="menu-content">
       <!-- Menu Header -->
       <div class="menu-header">
-        <div class="menu-info">
-          <div class="menu-title-section">
-            <button @click="goBack" class="back-btn">← Back to Menus</button>
-            <h1 class="menu-title">{{ menu.name }}</h1>
-          </div>
-          <div class="menu-meta">
-            <span class="menu-date">{{ formatDate(menu.date) }}</span>
-            <span class="menu-owner">Owner: {{ ownerUsername || menu.owner }}</span>
+        <button @click="goBack" class="back-btn">← Back to Menus</button>
+        <div class="menu-title-row">
+          <h1 class="menu-title">{{ menu.name }}</h1>
+          <div class="menu-actions">
+            <button 
+              v-if="canEditMenu && !isEditing" 
+              @click="enterEditMode" 
+              class="edit-btn"
+            >
+              Edit Menu
+            </button>
+            <div v-if="isEditing" class="edit-actions">
+              <button @click="saveChanges" class="save-btn" :disabled="isSaving">
+                {{ isSaving ? 'Saving...' : 'Save Changes' }}
+              </button>
+              <button @click="cancelEdit" class="cancel-btn">Cancel</button>
+              <button @click="deleteMenu" class="delete-btn" :disabled="isSaving">Delete Menu</button>
+            </div>
           </div>
         </div>
-        
-        <div class="menu-actions">
-          <button 
-            v-if="isOwner && !isEditing" 
-            @click="enterEditMode" 
-            class="edit-btn"
-          >
-            Edit Menu
-          </button>
-          <div v-if="isEditing" class="edit-actions">
-            <button @click="saveChanges" class="save-btn" :disabled="isSaving">
-              {{ isSaving ? 'Saving...' : 'Save Changes' }}
-            </button>
-            <button @click="cancelEdit" class="cancel-btn">Cancel</button>
-          </div>
+        <div class="menu-meta">
+          <span class="menu-date">{{ formatDate(menu.date) }}</span>
+          <span class="menu-owner">Owner: {{ ownerUsername || menu.owner }}</span>
+          <span class="menu-cost" v-if="menuCost !== null || menuCostLoading">
+            <span v-if="menuCostLoading">Loading cost...</span>
+            <span v-else-if="menuCost !== null">Cost: {{ formatCost(menuCost) }}</span>
+            <span v-else-if="menuCostError">Cost unavailable</span>
+          </span>
         </div>
       </div>
 
@@ -80,7 +92,7 @@
         <div class="section-header">
           <h2>Recipes</h2>
           <button 
-            v-if="isEditing" 
+            v-if="canEditRecipes" 
             @click="showAddRecipeModal = true" 
             class="add-recipe-btn"
           >
@@ -102,12 +114,27 @@
                   <span class="scaling-factor">Scaling: {{ recipe.scalingFactor }}x</span>
                   <span class="serving-quantity">{{ recipe.servingQuantity }} servings</span>
                   <span v-if="recipe.dishType" class="dish-type">{{ recipe.dishType }}</span>
+                  <span class="recipe-cost" v-if="recipeCosts[recipe.id] !== undefined || recipeCostsLoading[recipe.id]">
+                    <span v-if="recipeCostsLoading[recipe.id]">Loading cost...</span>
+                    <span v-else-if="recipeCosts[recipe.id] !== null">Cost: {{ formatCost(recipeCosts[recipe.id]) }}</span>
+                    <span v-else>Cost unavailable</span>
+                  </span>
                 </div>
               </div>
-              <div v-if="isEditing" class="recipe-actions">
-                <button @click="editRecipe(recipe)" class="edit-recipe-btn">Edit</button>
-                <button @click="changeScaling(recipe)" class="scaling-btn">Change Scaling</button>
-                <button @click="removeRecipe(recipe)" class="remove-recipe-btn">Remove</button>
+              <div v-if="canEditRecipes" class="recipe-actions">
+                <button 
+                  v-if="!isRecipeShowingActions(recipe.id)"
+                  @click="toggleRecipeActions(recipe.id)" 
+                  class="edit-recipe-btn"
+                >
+                  Edit Recipe
+                </button>
+                <div v-else class="recipe-action-buttons">
+                  <button @click="editRecipe(recipe)" class="edit-recipe-btn">Edit</button>
+                  <button @click="changeScaling(recipe)" class="scaling-btn">Change Scaling</button>
+                  <button @click="removeRecipe(recipe)" class="remove-recipe-btn">Remove</button>
+                  <button @click="toggleRecipeActions(recipe.id)" class="cancel-edit-btn">Cancel</button>
+                </div>
               </div>
             </div>
 
@@ -122,9 +149,9 @@
                     :key="ingredient.name"
                     class="ingredient-item"
                   >
-                    <span class="ingredient-quantity">{{ ingredient.quantity * recipe.scalingFactor }}</span>
-                    <span class="ingredient-units">{{ ingredient.units }}</span>
                     <span class="ingredient-name">{{ ingredient.name }}</span>
+                    <span class="ingredient-quantity">{{ ingredient.quantity }}</span>
+                    <span class="ingredient-units">{{ ingredient.units }}</span>
                   </li>
                 </ul>
               </div>
@@ -142,7 +169,7 @@
         <div v-else class="empty-state">
           <p>No recipes in this menu yet.</p>
           <button 
-            v-if="isEditing" 
+            v-if="canEditRecipes" 
             @click="showAddRecipeModal = true" 
             class="add-first-recipe-btn"
           >
@@ -271,7 +298,7 @@
                   id="instructions"
                   v-model="newRecipe.instructions" 
                   class="form-textarea"
-                  rows="6"
+                  rows="12"
                   placeholder="Enter cooking instructions..."
                 ></textarea>
               </div>
@@ -289,13 +316,34 @@
                 
                 <!-- Ingredient Form -->
                 <div v-if="showIngredientForm" class="add-ingredient-form">
-                  <input 
-                    ref="addIngredientNameInput"
-                    v-model="newIngredient.name" 
-                    type="text" 
-                    placeholder="Ingredient name"
-                    class="form-input ingredient-name-input"
-                  />
+                  <div class="ingredient-search-container" style="position: relative;">
+                    <input 
+                      ref="ingredientSearchInputRef"
+                      v-model="ingredientSearchQuery" 
+                      type="text" 
+                      placeholder="Search ingredient catalog..."
+                      class="form-input ingredient-name-input"
+                      @input="handleIngredientSearchInput"
+                      @focus="showIngredientDropdown = true"
+                      @blur="handleIngredientSearchBlur"
+                    />
+                    <div v-if="showIngredientDropdown && filteredCatalogItems.length > 0" class="ingredient-dropdown" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ccc; border-radius: 4px; max-height: 200px; overflow-y: auto; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                      <div 
+                        v-for="item in filteredCatalogItems" 
+                        :key="item.id"
+                        @mousedown.prevent="selectCatalogItem(item)"
+                        class="ingredient-dropdown-item"
+                        style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee;"
+                        @mouseenter="$event.target.style.backgroundColor = '#f0f0f0'"
+                        @mouseleave="$event.target.style.backgroundColor = 'white'"
+                      >
+                        {{ item.name }}
+                      </div>
+                    </div>
+                    <div v-if="showIngredientDropdown && ingredientSearchQuery && filteredCatalogItems.length === 0 && catalogState.isLoaded" class="ingredient-dropdown" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ccc; border-radius: 4px; padding: 12px; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                      No ingredients found
+                    </div>
+                  </div>
                   <input 
                     v-model.number="newIngredient.quantity" 
                     type="number" 
@@ -307,15 +355,16 @@
                   <select 
                     v-model="newIngredient.units"
                     class="form-select ingredient-units-input modern-select"
+                    :disabled="!selectedCatalogItem || availableUnits.length === 0"
                   >
-                    <option value="">Units</option>
-                    <option v-for="u in unitOptions" :key="u" :value="u">{{ u }}</option>
+                    <option value="">{{ availableUnits.length === 0 && selectedCatalogItem ? 'No units available' : 'Select units' }}</option>
+                    <option v-for="u in availableUnits" :key="u" :value="u">{{ u }}</option>
                   </select>
                 <button 
                   type="button"
                   @click="addIngredient" 
                   class="add-ingredient-btn add-ingredient-primary"
-                  :disabled="!newIngredient.name?.trim() || newIngredient.quantity <= 0 || !newIngredient.units?.trim()"
+                  :disabled="!selectedCatalogItem || newIngredient.quantity <= 0 || !newIngredient.units?.trim()"
                 >
                   Add
                 </button>
@@ -330,10 +379,10 @@
                     :key="index"
                     class="ingredient-item"
                   >
+                    <span class="ingredient-name">{{ ingredient.name }}</span>
                     <span class="ingredient-quantity">{{ ingredient.quantity }}</span>
                     <span class="ingredient-units">{{ ingredient.units }}</span>
-                    <span class="ingredient-name">{{ ingredient.name }}</span>
-                    <button @click="removeIngredient(index)" class="remove-ingredient-btn">&times;</button>
+                    <button @click="removeIngredient(index)" class="remove-ingredient-btn">Remove</button>
                   </div>
                 </div>
               </div>
@@ -401,7 +450,7 @@
                 id="edit-instructions"
                 v-model="editRecipeForm.instructions" 
                 class="form-textarea"
-                rows="6"
+                rows="12"
               ></textarea>
             </div>
 
@@ -410,21 +459,42 @@
               <h4>Ingredients</h4>
               
               <!-- Initial Add Ingredient Button -->
-              <div v-if="!showEditIngredientForm" class="add-ingredient-initial">
+              <div v-if="!showEditIngredientForm && editingIngredientIndex === null" class="add-ingredient-initial">
                 <button type="button" @click="openEditIngredientForm" class="add-new-ingredient-btn neutral">
                   + Add New Ingredient
                 </button>
               </div>
               
-              <!-- Ingredient Form -->
-                <div v-if="showEditIngredientForm" class="add-ingredient-form">
-                  <input 
-                    ref="editIngredientNameInput"
-                    v-model="newIngredient.name" 
-                    type="text" 
-                    placeholder="Ingredient name"
-                    class="form-input ingredient-name-input"
-                  />
+              <!-- Add New Ingredient Form -->
+                <div v-if="showEditIngredientForm && editingIngredientIndex === null" class="add-ingredient-form">
+                  <div class="ingredient-search-container" style="position: relative;">
+                    <input 
+                      ref="editIngredientSearchInputRef"
+                      v-model="ingredientSearchQuery" 
+                      type="text" 
+                      placeholder="Search ingredient catalog..."
+                      class="form-input ingredient-name-input"
+                      @input="handleIngredientSearchInput"
+                      @focus="showIngredientDropdown = true"
+                      @blur="handleIngredientSearchBlur"
+                    />
+                    <div v-if="showIngredientDropdown && filteredCatalogItems.length > 0" class="ingredient-dropdown" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ccc; border-radius: 4px; max-height: 200px; overflow-y: auto; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                      <div 
+                        v-for="item in filteredCatalogItems" 
+                        :key="item.id"
+                        @mousedown.prevent="selectCatalogItem(item)"
+                        class="ingredient-dropdown-item"
+                        style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee;"
+                        @mouseenter="$event.target.style.backgroundColor = '#f0f0f0'"
+                        @mouseleave="$event.target.style.backgroundColor = 'white'"
+                      >
+                        {{ item.name }}
+                      </div>
+                    </div>
+                    <div v-if="showIngredientDropdown && ingredientSearchQuery && filteredCatalogItems.length === 0 && catalogState.isLoaded" class="ingredient-dropdown" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ccc; border-radius: 4px; padding: 12px; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                      No ingredients found
+                    </div>
+                  </div>
                 <input 
                   v-model.number="newIngredient.quantity" 
                   type="number" 
@@ -436,15 +506,16 @@
                 <select 
                   v-model="newIngredient.units" 
                   class="form-select ingredient-units-input modern-select"
+                  :disabled="!selectedCatalogItem || availableUnits.length === 0"
                 >
-                  <option value="">Units</option>
-                  <option v-for="u in unitOptions" :key="u" :value="u">{{ u }}</option>
+                  <option value="">{{ availableUnits.length === 0 && selectedCatalogItem ? 'No units available' : 'Select units' }}</option>
+                  <option v-for="u in availableUnits" :key="u" :value="u">{{ u }}</option>
                 </select>
                 <button 
                   type="button"
                   @click="addIngredientToEdit" 
                   class="add-ingredient-btn add-ingredient-primary"
-                  :disabled="!newIngredient.name || !newIngredient.quantity || !newIngredient.units"
+                  :disabled="!selectedCatalogItem || newIngredient.quantity <= 0 || !newIngredient.units?.trim()"
                 >
                   Add
                 </button>
@@ -459,26 +530,73 @@
                   :key="index"
                   class="ingredient-item"
                 >
-                  <input 
-                    v-model.number="ingredient.quantity" 
-                    type="number" 
-                    step="0.1" 
-                    min="0.1"
-                    class="form-input small-input"
-                  />
-                  <select 
-                    v-model="ingredient.units" 
-                    class="form-select small-input"
-                  >
-                    <option value="">Units</option>
-                    <option v-for="u in unitOptions" :key="u" :value="u">{{ u }}</option>
-                  </select>
-                  <input 
-                    v-model="ingredient.name" 
-                    type="text" 
-                    class="form-input"
-                  />
-                  <button @click="removeIngredientFromEdit(index)" class="remove-ingredient-btn">&times;</button>
+                  <!-- Read-only display when not editing this ingredient -->
+                  <template v-if="editingIngredientIndex !== index">
+                    <span class="ingredient-name">{{ ingredient.name }}</span>
+                    <span class="ingredient-quantity">{{ ingredient.quantity }}</span>
+                    <span class="ingredient-units">{{ ingredient.units }}</span>
+                    <button @click="startEditIngredient(index)" class="edit-ingredient-btn">Edit</button>
+                    <button @click="removeIngredientFromEdit(index)" class="remove-ingredient-btn">Remove</button>
+                  </template>
+                  
+                  <!-- Edit form when editing this ingredient -->
+                  <div v-if="editingIngredientIndex === index" class="add-ingredient-form">
+                    <div class="ingredient-search-container" style="position: relative;">
+                      <input 
+                        ref="editIngredientSearchInputRef"
+                        v-model="ingredientSearchQuery" 
+                        type="text" 
+                        placeholder="Search ingredient catalog..."
+                        class="form-input ingredient-name-input"
+                        @input="handleIngredientSearchInput"
+                        @focus="showIngredientDropdown = true"
+                        @blur="handleIngredientSearchBlur"
+                      />
+                      <div v-if="showIngredientDropdown && filteredCatalogItems.length > 0" class="ingredient-dropdown" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ccc; border-radius: 4px; max-height: 200px; overflow-y: auto; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        <div 
+                          v-for="item in filteredCatalogItems" 
+                          :key="item.id"
+                          @mousedown.prevent="selectCatalogItem(item)"
+                          class="ingredient-dropdown-item"
+                          style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee;"
+                          @mouseenter="$event.target.style.backgroundColor = '#f0f0f0'"
+                          @mouseleave="$event.target.style.backgroundColor = 'white'"
+                        >
+                          {{ item.name }}
+                        </div>
+                      </div>
+                      <div v-if="showIngredientDropdown && ingredientSearchQuery && filteredCatalogItems.length === 0 && catalogState.isLoaded" class="ingredient-dropdown" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ccc; border-radius: 4px; padding: 12px; z-index: 1000; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        No ingredients found
+                      </div>
+                    </div>
+                    <input 
+                      v-model.number="newIngredient.quantity" 
+                      type="number" 
+                      step="0.1" 
+                      min="0.1"
+                      placeholder="Quantity"
+                      class="form-input ingredient-quantity-input"
+                    />
+                    <select 
+                      v-model="newIngredient.units" 
+                      class="form-select ingredient-units-input modern-select"
+                      :disabled="!selectedCatalogItem || availableUnits.length === 0"
+                    >
+                      <option value="">{{ availableUnits.length === 0 && selectedCatalogItem ? 'No units available' : 'Select units' }}</option>
+                      <option v-for="u in availableUnits" :key="u" :value="u">{{ u }}</option>
+                    </select>
+                    <button 
+                      type="button"
+                      @click="saveEditedIngredient" 
+                      class="add-ingredient-btn add-ingredient-primary"
+                      :disabled="!selectedCatalogItem || newIngredient.quantity <= 0 || !newIngredient.units?.trim()"
+                    >
+                      Save
+                    </button>
+                    <button type="button" @click="cancelEditIngredient" class="cancel-ingredient-btn add-ingredient-danger">
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -543,6 +661,10 @@ import { cookBookService } from '../services/cookBookService.js'
 import { authStore } from '../stores/authStore.js'
 import { authService } from '../services/authService.js'
 import { weeklyCartService } from '../services/weeklyCartService.js'
+import { weeklyCartStore } from '../stores/weeklyCartStore.js'
+import { menuDetailStore, menuDetailState } from '../stores/menuDetailStore.js'
+import { catalogStore, catalogState } from '../stores/catalogStore.js'
+import { fetchMenuCost, fetchRecipeCost, formatCost } from '../utils/costUtils.js'
 
 export default {
   name: 'MenuPage',
@@ -554,521 +676,111 @@ export default {
   },
   emits: ['back-to-menus'],
   setup(props, { emit }) {
-    // Reactive state
-    const isLoading = ref(false)
+    console.log(`[MenuPage] ========== setup() CALLED ==========`)
+    console.log(`[MenuPage] setup - menuId prop: ${props.menuId}`)
+    console.log(`[MenuPage] setup - menuDetailState.menus keys: [${Object.keys(menuDetailState.menus).join(', ')}]`)
+    console.log(`[MenuPage] setup - menuDetailState.menus[${props.menuId}] exists: ${!!menuDetailState.menus[props.menuId]}`)
+    
+    // Local refs for menu data - updated by watchers for reliable reactivity
+    const menu = ref(null)
+    const recipes = ref([])
+    const ownerUsername = ref('')
+    
+    console.log(`[MenuPage] setup - Initialized local refs:`, {
+      menu: menu.value,
+      recipesCount: recipes.value.length,
+      ownerUsername: ownerUsername.value
+    })
+    
+    // Use menu detail store reactive state for loading and error
+    const isLoading = computed(() => {
+      const result = menuDetailState.loading[props.menuId] || false
+      console.log(`[MenuPage] isLoading computed - menuId: ${props.menuId}, returning: ${result}, state.loading[${props.menuId}]: ${menuDetailState.loading[props.menuId]}`)
+      return result
+    })
     const isSaving = ref(false)
     const isAddingRecipe = ref(false)
     const isSavingRecipe = ref(false)
     const isUpdatingScaling = ref(false)
-    const error = ref(null)
+    const error = computed(() => {
+      const result = menuDetailState.errors[props.menuId] || null
+      console.log(`[MenuPage] error computed - menuId: ${props.menuId}, returning: ${result}, state.errors[${props.menuId}]: ${menuDetailState.errors[props.menuId]}`)
+      return result
+    })
     
-    const menu = ref(null)
-    const recipes = ref([])
+    // Cost state
+    const menuCost = ref(null)
+    const menuCostLoading = ref(false)
+    const menuCostError = ref(null)
+    const recipeCosts = ref({}) // recipeId -> cost
+    const recipeCostsLoading = ref({}) // recipeId -> boolean
+    
     const availableRecipes = ref([])
-    const ownerUsername = ref('')
     
-    const isEditing = ref(false)
-    const editForm = reactive({
-      name: '',
-      date: ''
-    })
-    const formErrors = reactive({})
-    
-    // Modal states
-    const showAddRecipeModal = ref(false)
-    const showEditRecipeModal = ref(false)
-    const showScalingModal = ref(false)
-    const addRecipeMode = ref('existing')
-    const selectedRecipeId = ref('')
-    const scalingFactor = ref(1)
-    const newScalingFactor = ref(1)
-    const editingRecipe = ref(null)
-const showIngredientForm = ref(false)
-const showEditIngredientForm = ref(false)
-const addIngredientNameInput = ref(null)
-const editIngredientNameInput = ref(null)
-    
-    // Recipe forms
-    const newRecipe = reactive({
-      name: '',
-      dishType: '',
-      servingQuantity: 1,
-      instructions: '',
-      ingredients: []
-    })
-    const newRecipeErrors = reactive({})
-    const editRecipeForm = reactive({
-      name: '',
-      dishType: '',
-      servingQuantity: 1,
-      instructions: '',
-      ingredients: []
-    })
-    const unitOptions = [
-      'g','kg','mg','lb','oz','ml','l','tsp','tbsp','cup','pint','quart','gallon','piece','pack','can'
-    ]
-    const newIngredient = reactive({
-      name: '',
-      quantity: 1,
-      units: ''
-    })
-    
-    // Computed properties
-    const currentUser = computed(() => authStore.user)
-    const route = useRoute()
-    const isOwner = computed(() => menu.value && currentUser.value && menu.value.owner === currentUser.value.id)
-    
-    // Methods
-    const loadMenu = async () => {
-      isLoading.value = true
-      error.value = null
+    // Function to update local refs from store
+    // Always syncs from store state, ensuring reactive updates
+    const updateMenuData = () => {
+      console.log(`[MenuPage] updateMenuData ENTRY - menuId: ${props.menuId}`)
+      console.log(`[MenuPage] updateMenuData - Accessing menuDetailState.menus[${props.menuId}]`)
+      console.log(`[MenuPage] updateMenuData - menuDetailState.menus keys: [${Object.keys(menuDetailState.menus).join(', ')}]`)
+      const menuData = menuDetailState.menus[props.menuId]
+      console.log(`[MenuPage] updateMenuData - menuData exists: ${!!menuData}`)
+      console.log(`[MenuPage] updateMenuData - menuData:`, menuData)
       
-      try {
-        // Load menu details
-        const menuResponse = await menuCollectionService.getMenuDetails(props.menuId)
-        if (menuResponse && menuResponse.length > 0) {
-          menu.value = menuResponse[0]
-          editForm.name = menu.value.name
-          editForm.date = formatDateForInput(menu.value.date)
-          
-          // Load owner username
-          if (menu.value.owner) {
-            ownerUsername.value = await authService.getUsername(menu.value.owner)
-          }
-        }
+      if (menuData) {
+        console.log(`[MenuPage] updateMenuData - menuData.menuDetails exists: ${!!menuData.menuDetails}`)
+        console.log(`[MenuPage] updateMenuData - menuData.recipes is array: ${Array.isArray(menuData.recipes)}`)
+        console.log(`[MenuPage] updateMenuData - menuData.ownerUsername: ${menuData.ownerUsername}`)
+      }
+      
+      if (menuData && menuData.menuDetails) {
+        console.log('[MenuPage] Updating menu data from store for menuId:', props.menuId)
+        console.log('[MenuPage] updateMenuData - Before assignment, local refs:', {
+          menu: menu.value ? 'exists' : 'null',
+          recipesCount: recipes.value.length,
+          ownerUsername: ownerUsername.value
+        })
+        menu.value = menuData.menuDetails
+        recipes.value = Array.isArray(menuData.recipes) ? menuData.recipes : []
+        ownerUsername.value = menuData.ownerUsername || ''
+        console.log('[MenuPage] Menu data updated:', { 
+          menu: menu.value ? 'exists' : 'null', 
+          menuName: menu.value?.name,
+          recipesCount: recipes.value.length, 
+          ownerUsername: ownerUsername.value 
+        })
+        console.log('[MenuPage] updateMenuData - After assignment, local refs:', {
+          menu: menu.value ? 'exists' : 'null',
+          menuName: menu.value?.name,
+          recipesCount: recipes.value.length,
+          ownerUsername: ownerUsername.value
+        })
+      } else {
+        console.log('[MenuPage] No menu data in store for menuId:', props.menuId)
+        console.log('[MenuPage] updateMenuData - Checking if should clear local refs')
+        console.log('[MenuPage] updateMenuData - isLoading:', isLoading.value)
         
-        // Load recipes in menu
-        const recipesResponse = await menuCollectionService.getRecipesInMenu(props.menuId)
-        console.log('Recipes response:', recipesResponse)
-        
-        if (recipesResponse && recipesResponse.length > 0) {
-          const menuRecipes = recipesResponse[0].menuRecipes || {}
-          console.log('Menu recipes:', menuRecipes)
-          
-          const recipePromises = Object.keys(menuRecipes).map(async (recipeId) => {
-            const scalingFactor = menuRecipes[recipeId]
-            const [detailsResponse, ingredientsResponse] = await Promise.all([
-              cookBookService.getRecipeDetails(recipeId),
-              cookBookService.getRecipeIngredients(recipeId)
-            ])
-            
-            const details = detailsResponse[0]
-            const ingredients = ingredientsResponse[0]?.ingredients || []
-            
-            return {
-              id: recipeId,
-              name: details.name,
-              dishType: details.dishType,
-              servingQuantity: details.servingQuantity,
-              instructions: details.instructions,
-              scalingFactor: scalingFactor,
-              ingredients: ingredients
-            }
-          })
-          
-          recipes.value = await Promise.all(recipePromises)
-        } else {
+        // Only clear menu if we're certain it doesn't exist and we're not loading
+        // This prevents clearing menu during initial load or when data might be loading
+        if (!isLoading.value) {
+          console.log('[MenuPage] updateMenuData - Clearing local refs (not loading)')
+          menu.value = null
           recipes.value = []
-        }
-        
-        // Load available recipes for adding
-        if (currentUser.value) {
-          const availableResponse = await cookBookService.getRecipesOwnedByUser(currentUser.value.id)
-          if (availableResponse && availableResponse.length > 0) {
-            availableRecipes.value = availableResponse.map(recipe => ({
-              id: recipe.recipe,
-              name: recipe.name
-            }))
-          }
-        }
-        
-      } catch (err) {
-        console.error('Error loading menu:', err)
-        error.value = err.message || 'Failed to load menu'
-      } finally {
-        isLoading.value = false
-      }
-    }
-    
-    const enterEditMode = () => {
-      isEditing.value = true
-      editForm.name = menu.value.name
-      // Ensure date is in YYYY-MM-DD format for HTML date input
-      editForm.date = formatDateForInput(menu.value.date)
-    }
-    
-    const cancelEdit = () => {
-      isEditing.value = false
-      editForm.name = menu.value.name
-      editForm.date = formatDateForInput(menu.value.date)
-      clearFormErrors()
-    }
-    
-    const saveChanges = async () => {
-      if (!validateMenuForm()) return
-      
-      isSaving.value = true
-      
-      try {
-        const updates = {}
-        
-        // Check if name has changed
-        if (editForm.name !== menu.value.name) {
-          updates.name = editForm.name
-        }
-        
-        // Check if date has changed - compare formatted dates
-        const currentFormattedDate = formatDateForInput(menu.value.date)
-        if (editForm.date !== currentFormattedDate) {
-          // Convert date string to Date object for the API
-          updates.date = new Date(editForm.date)
-          console.log('Date change detected:', {
-            original: menu.value.date,
-            originalFormatted: currentFormattedDate,
-            new: editForm.date,
-            newAsDate: updates.date
+          ownerUsername.value = ''
+          console.log('[MenuPage] updateMenuData - After clearing, local refs:', {
+            menu: menu.value,
+            recipesCount: recipes.value.length,
+            ownerUsername: ownerUsername.value
           })
+        } else {
+          console.log('[MenuPage] updateMenuData - Skipping clear (menu is loading)')
         }
-        
-        if (Object.keys(updates).length > 0) {
-          console.log('Saving updates:', updates)
-          await menuCollectionService.updateMenu(props.menuId, updates)
-          
-          // If date changed, re-sync Weekly Cart: remove from old, add to new
-          if (updates.date) {
-            try {
-              await weeklyCartService.removeMenuFromCart(props.menuId)
-            } catch (removeErr) {
-              console.error('Warning: removing menu from previous cart failed (continuing):', removeErr)
-            }
-            try {
-              await weeklyCartService.addMenuToCart(props.menuId, editForm.date)
-            } catch (addErr) {
-              console.error('Error syncing updated menu to Weekly Cart:', addErr)
-            }
-          }
-          
-          // Reload menu data to ensure we have the latest from the server
-          await loadMenu()
-        }
-        
-        isEditing.value = false
-      } catch (err) {
-        console.error('Error saving menu:', err)
-        error.value = err.message || 'Failed to save menu changes'
-      } finally {
-        isSaving.value = false
       }
+      console.log(`[MenuPage] updateMenuData EXIT - menuId: ${props.menuId}`)
     }
     
-    const validateMenuForm = () => {
-      clearFormErrors()
-      let isValid = true
-      
-      if (!editForm.name.trim()) {
-        formErrors.name = 'Menu name is required'
-        isValid = false
-      }
-      
-      if (!editForm.date) {
-        formErrors.date = 'Menu date is required'
-        isValid = false
-      }
-      
-      return isValid
-    }
-    
-    const clearFormErrors = () => {
-      Object.keys(formErrors).forEach(key => delete formErrors[key])
-      Object.keys(newRecipeErrors).forEach(key => delete newRecipeErrors[key])
-    }
-    
-    const addRecipeToMenu = async () => {
-      if (addRecipeMode.value === 'existing') {
-        if (!selectedRecipeId.value || !scalingFactor.value) {
-          error.value = 'Please select a recipe and enter a scaling factor'
-          return
-        }
-      } else {
-        if (!validateNewRecipe()) return
-      }
-      
-      isAddingRecipe.value = true
-      
-      try {
-        let recipeId = selectedRecipeId.value
-        
-        if (addRecipeMode.value === 'new') {
-          // Create new recipe
-          const createResponse = await cookBookService.createRecipe(newRecipe.name, currentUser.value.id)
-          recipeId = createResponse.recipe
-          
-          // Update recipe details
-          const updates = {}
-          if (newRecipe.dishType) updates.dishType = newRecipe.dishType
-          if (newRecipe.servingQuantity) updates.servingQuantity = newRecipe.servingQuantity
-          if (newRecipe.instructions) updates.instructions = newRecipe.instructions
-          
-          if (Object.keys(updates).length > 0) {
-            await cookBookService.updateRecipe(recipeId, updates)
-          }
-          
-          // Add ingredients
-          for (const ingredient of newRecipe.ingredients) {
-            await cookBookService.addRecipeIngredient(
-              recipeId,
-              ingredient.name,
-              ingredient.quantity,
-              ingredient.units
-            )
-          }
-        }
-        
-        // Add recipe to menu
-        await menuCollectionService.addRecipe(props.menuId, recipeId, scalingFactor.value)
-        
-        // Reload menu to show updated recipes
-        await loadMenu()
-        
-        // Reset form and close modal
-        resetAddRecipeForm()
-        showAddRecipeModal.value = false
-        
-      } catch (err) {
-        console.error('Error adding recipe:', err)
-        error.value = err.message || 'Failed to add recipe to menu'
-      } finally {
-        isAddingRecipe.value = false
-      }
-    }
-    
-    const validateNewRecipe = () => {
-      clearFormErrors()
-      let isValid = true
-      
-      if (!newRecipe.name.trim()) {
-        newRecipeErrors.name = 'Recipe name is required'
-        isValid = false
-      }
-      
-      return isValid
-    }
-    
-    const resetAddRecipeForm = () => {
-      selectedRecipeId.value = ''
-      scalingFactor.value = 1
-      newRecipe.name = ''
-      newRecipe.dishType = ''
-      newRecipe.servingQuantity = 1
-      newRecipe.instructions = ''
-      newRecipe.ingredients = []
-      newIngredient.name = ''
-      newIngredient.quantity = 1
-      newIngredient.units = ''
-      addRecipeMode.value = 'existing'
-    }
-    
-    function openAddIngredientForm() {
-      console.log('Opening add ingredient form')
-      showIngredientForm.value = true
-      newIngredient.name = ''
-      newIngredient.quantity = 1
-      newIngredient.units = ''
-      nextTick(() => {
-        console.log('Focusing add ingredient input')
-        addIngredientNameInput.value?.focus()
-      })
-    }
-
-    function addIngredient() {
-      console.log('Attempting to add ingredient', JSON.stringify(newIngredient))
-      const name = (newIngredient.name || '').trim()
-      const units = (newIngredient.units || '').trim()
-      const qty = Number(newIngredient.quantity)
-      if (name && units && qty > 0) {
-        console.log('Adding ingredient to newRecipe list')
-        newRecipe.ingredients.push({ name, units, quantity: qty })
-        newIngredient.name = ''
-        newIngredient.quantity = 1
-        newIngredient.units = ''
-        showIngredientForm.value = false
-      } else {
-        console.log('Ingredient validation failed', { name, units, qty })
-      }
-    }
-
-    function cancelAddIngredient() {
-      console.log('Cancelling add ingredient form')
-      showIngredientForm.value = false
-      newIngredient.name = ''
-      newIngredient.quantity = 1
-      newIngredient.units = ''
-    }
-    
-    const removeIngredient = (index) => {
-      newRecipe.ingredients.splice(index, 1)
-    }
-    
-    const editRecipe = (recipe) => {
-      editingRecipe.value = recipe
-      editRecipeForm.name = recipe.name
-      editRecipeForm.dishType = recipe.dishType
-      editRecipeForm.servingQuantity = recipe.servingQuantity
-      editRecipeForm.instructions = recipe.instructions
-      editRecipeForm.ingredients = [...recipe.ingredients]
-      showEditRecipeModal.value = true
-    }
-    
-    function addIngredientToEdit() {
-      console.log('Attempting to add ingredient to edit list', JSON.stringify(newIngredient))
-      if (newIngredient.name && newIngredient.quantity && newIngredient.units) {
-        console.log('Adding ingredient to editRecipeForm ingredients')
-        editRecipeForm.ingredients.push({ ...newIngredient })
-        newIngredient.name = ''
-        newIngredient.quantity = 1
-        newIngredient.units = ''
-        showEditIngredientForm.value = false
-      } else {
-        console.log('Edit ingredient validation failed', { name: newIngredient.name, quantity: newIngredient.quantity, units: newIngredient.units })
-      }
-    }
-
-    function openEditIngredientForm() {
-      console.log('Opening edit ingredient form')
-      showEditIngredientForm.value = true
-      newIngredient.name = ''
-      newIngredient.quantity = 1
-      newIngredient.units = ''
-      nextTick(() => {
-        console.log('Focusing edit ingredient input')
-        editIngredientNameInput.value?.focus()
-      })
-    }
-
-    function cancelAddIngredientToEdit() {
-      console.log('Cancelling edit ingredient form')
-      showEditIngredientForm.value = false
-      newIngredient.name = ''
-      newIngredient.quantity = 1
-      newIngredient.units = ''
-    }
-    
-    const removeIngredientFromEdit = (index) => {
-      editRecipeForm.ingredients.splice(index, 1)
-    }
-    
-    const saveRecipeChanges = async () => {
-      isSavingRecipe.value = true
-      
-      try {
-        const recipeId = editingRecipe.value.id
-        
-        // Update recipe details
-        const updates = {}
-        if (editRecipeForm.name !== editingRecipe.value.name) updates.name = editRecipeForm.name
-        if (editRecipeForm.dishType !== editingRecipe.value.dishType) updates.dishType = editRecipeForm.dishType
-        if (editRecipeForm.servingQuantity !== editingRecipe.value.servingQuantity) updates.servingQuantity = editRecipeForm.servingQuantity
-        if (editRecipeForm.instructions !== editingRecipe.value.instructions) updates.instructions = editRecipeForm.instructions
-        
-        if (Object.keys(updates).length > 0) {
-          await cookBookService.updateRecipe(recipeId, updates)
-        }
-        
-        // Update ingredients (simplified - remove all and re-add)
-        // In a real app, you'd want to be more sophisticated about this
-        const currentIngredients = editingRecipe.value.ingredients
-        const newIngredients = editRecipeForm.ingredients
-        
-        // Remove ingredients that are no longer in the list
-        for (const ingredient of currentIngredients) {
-          if (!newIngredients.find(ing => ing.name === ingredient.name)) {
-            await cookBookService.removeRecipeIngredient(recipeId, ingredient.name)
-          }
-        }
-        
-        // Add or update ingredients
-        for (const ingredient of newIngredients) {
-          const existingIngredient = currentIngredients.find(ing => ing.name === ingredient.name)
-          if (existingIngredient) {
-            if (existingIngredient.quantity !== ingredient.quantity || existingIngredient.units !== ingredient.units) {
-              await cookBookService.updateRecipeIngredient(recipeId, ingredient.name, ingredient.quantity, ingredient.units)
-            }
-          } else {
-            await cookBookService.addRecipeIngredient(recipeId, ingredient.name, ingredient.quantity, ingredient.units)
-          }
-        }
-        
-        // Reload menu to show updated recipes
-        await loadMenu()
-        
-        showEditRecipeModal.value = false
-        
-      } catch (err) {
-        console.error('Error saving recipe:', err)
-        error.value = err.message || 'Failed to save recipe changes'
-      } finally {
-        isSavingRecipe.value = false
-      }
-    }
-    
-    const changeScaling = (recipe) => {
-      editingRecipe.value = recipe
-      newScalingFactor.value = recipe.scalingFactor
-      showScalingModal.value = true
-    }
-    
-    const updateScalingFactor = async () => {
-      isUpdatingScaling.value = true
-      
-      try {
-        await menuCollectionService.changeRecipeScaling(
-          props.menuId,
-          editingRecipe.value.id,
-          newScalingFactor.value
-        )
-        
-        // Reload menu to show updated scaling
-        await loadMenu()
-        
-        showScalingModal.value = false
-        
-      } catch (err) {
-        console.error('Error updating scaling:', err)
-        error.value = err.message || 'Failed to update scaling factor'
-      } finally {
-        isUpdatingScaling.value = false
-      }
-    }
-    
-    const removeRecipe = async (recipe) => {
-      if (!confirm(`Are you sure you want to remove "${recipe.name}" from this menu?`)) {
-        return
-      }
-      
-      try {
-        await menuCollectionService.removeRecipe(props.menuId, recipe.id)
-        await loadMenu()
-      } catch (err) {
-        console.error('Error removing recipe:', err)
-        error.value = err.message || 'Failed to remove recipe from menu'
-      }
-    }
-    
-    const closeAddRecipeModal = () => {
-      showAddRecipeModal.value = false
-      resetAddRecipeForm()
-    }
-    
-    const closeEditRecipeModal = () => {
-      showEditRecipeModal.value = false
-      editingRecipe.value = null
-    }
-    
-    const closeScalingModal = () => {
-      showScalingModal.value = false
-      editingRecipe.value = null
-    }
-    
+    // Date formatting helper functions
+    // Must be defined before watchers that use them (especially with immediate: true)
     const formatDate = (dateString) => {
       if (!dateString) return ''
       
@@ -1123,23 +835,1202 @@ const editIngredientNameInput = ref(null)
       }
     }
     
+    // Watch for menu data changes - simpler approach
+    // Watch the menus object and loading state separately for better reactivity
+    watch(
+      () => menuDetailState.menus[props.menuId],
+      (menuData, oldMenuData) => {
+        console.log('[MenuPage] ========== Menu data watcher TRIGGERED ==========')
+        console.log('[MenuPage] Menu data watcher - menuId:', props.menuId)
+        console.log('[MenuPage] Menu data watcher - menuData exists:', !!menuData)
+        console.log('[MenuPage] Menu data watcher - oldMenuData exists:', !!oldMenuData)
+        console.log('[MenuPage] Menu data watcher - menuData:', menuData)
+        console.log('[MenuPage] Menu data watcher - menuData.menuDetails exists:', !!(menuData && menuData.menuDetails))
+        console.log('[MenuPage] Menu data watcher - menuDetailState.menus keys: [', Object.keys(menuDetailState.menus).join(', '), ']')
+        console.log('[MenuPage] Menu data watcher - Current local refs before update:', {
+          menu: menu.value ? 'exists' : 'null',
+          recipesCount: recipes.value.length,
+          ownerUsername: ownerUsername.value
+        })
+        
+        if (menuData && menuData.menuDetails) {
+          console.log('[MenuPage] Menu data watcher - Calling updateMenuData...')
+          updateMenuData()
+          console.log('[MenuPage] Menu data watcher - updateMenuData completed')
+          // Load costs when menu data is available - defer to nextTick to ensure reactivity has settled
+          nextTick(() => {
+            // Only load costs if menu is actually set and not loading
+            if (menu.value && !isLoading.value) {
+              try {
+                // Load menu cost - catch errors to prevent breaking menu display
+                loadMenuCost().catch(err => {
+                  console.error('Error in loadMenuCost (non-blocking):', err)
+                })
+                // Only load recipe costs if we have recipes
+                if (recipes.value && recipes.value.length > 0) {
+                  loadAllRecipeCosts().catch(err => {
+                    console.error('Error in loadAllRecipeCosts (non-blocking):', err)
+                  })
+                }
+              } catch (err) {
+                console.error('Error loading costs (non-blocking):', err)
+              }
+            }
+          })
+        } else {
+          console.log('[MenuPage] Menu data watcher - Not calling updateMenuData (no valid menuData)')
+          // Clear cost state when menu data is unavailable
+          // Only clear if we're not loading (to avoid clearing during initial load)
+          if (!isLoading.value) {
+            menuCost.value = null
+            recipeCosts.value = {}
+            menuCostLoading.value = false
+          }
+        }
+        console.log('[MenuPage] ========== Menu data watcher END ==========')
+      },
+      { immediate: true, deep: true }
+    )
+    
+    // Watch loading state to update when loading completes
+    watch(
+      () => menuDetailState.loading[props.menuId],
+      (loading, oldLoading) => {
+        console.log('[MenuPage] ========== Loading watcher TRIGGERED ==========')
+        console.log('[MenuPage] Loading watcher - menuId:', props.menuId)
+        console.log('[MenuPage] Loading watcher - loading:', loading)
+        console.log('[MenuPage] Loading watcher - oldLoading:', oldLoading)
+        console.log(`[MenuPage] Loading watcher - Transition: loading ${oldLoading} -> ${loading}`)
+        console.log(`[MenuPage] Loading watcher - Condition check: oldLoading (${oldLoading}) && !loading (${!loading}) = ${oldLoading && !loading}`)
+        console.log(`[MenuPage] Loading watcher - menuDetailState.menus[${props.menuId}] exists:`, !!menuDetailState.menus[props.menuId])
+        console.log('[MenuPage] Loading watcher - Current local refs:', {
+          menu: menu.value ? 'exists' : 'null',
+          recipesCount: recipes.value.length,
+          ownerUsername: ownerUsername.value
+        })
+        
+        // When loading completes, update menu data
+        if (oldLoading && !loading) {
+          console.log('[MenuPage] Loading watcher - Loading completed, calling updateMenuData...')
+          updateMenuData()
+          console.log('[MenuPage] Loading watcher - updateMenuData completed')
+          // Load costs after loading completes and menu data is updated
+          nextTick(() => {
+            if (menu.value && !isLoading.value) {
+              try {
+                loadMenuCost().catch(err => {
+                  console.error('Error in loadMenuCost after loading completes (non-blocking):', err)
+                })
+                if (recipes.value && recipes.value.length > 0) {
+                  loadAllRecipeCosts().catch(err => {
+                    console.error('Error in loadAllRecipeCosts after loading completes (non-blocking):', err)
+                  })
+                }
+              } catch (err) {
+                console.error('Error loading costs after loading completes (non-blocking):', err)
+              }
+            }
+          })
+        } else {
+          console.log('[MenuPage] Loading watcher - Not calling updateMenuData')
+        }
+        console.log('[MenuPage] ========== Loading watcher END ==========')
+      },
+      { immediate: true }
+    )
+    
+    // Watch menuId prop changes to clear cost state when navigating to a different menu
+    watch(
+      () => props.menuId,
+      (newMenuId, oldMenuId) => {
+        if (newMenuId !== oldMenuId && oldMenuId) {
+          console.log('[MenuPage] MenuId changed, clearing cost state')
+          // Clear cost state when menuId changes
+          menuCost.value = null
+          recipeCosts.value = {}
+          menuCostLoading.value = false
+          menuCostError.value = null
+          // Clear all recipe cost loading states
+          Object.keys(recipeCostsLoading.value).forEach(key => {
+            delete recipeCostsLoading.value[key]
+          })
+        }
+      }
+    )
+    
+    const isEditing = ref(false)
+    const editForm = reactive({
+      name: '',
+      date: ''
+    })
+    const formErrors = reactive({})
+    
+    // Modal states
+    const showAddRecipeModal = ref(false)
+    const showEditRecipeModal = ref(false)
+    const showScalingModal = ref(false)
+    const addRecipeMode = ref('existing')
+    const selectedRecipeId = ref('')
+    const scalingFactor = ref(1)
+    const newScalingFactor = ref(1)
+    const editingRecipe = ref(null)
+    
+    // Track which recipes are showing their edit actions
+    const recipesShowingActions = ref(new Set())
+const showIngredientForm = ref(false)
+const showEditIngredientForm = ref(false)
+const editingIngredientIndex = ref(null) // Track which ingredient is being edited (null = adding new, number = editing existing)
+    
+    // Recipe forms
+    const newRecipe = reactive({
+      name: '',
+      dishType: '',
+      servingQuantity: 1,
+      instructions: '',
+      ingredients: []
+    })
+    const newRecipeErrors = reactive({})
+    const editRecipeForm = reactive({
+      name: '',
+      dishType: '',
+      servingQuantity: 1,
+      instructions: '',
+      ingredients: []
+    })
+    const unitOptions = [
+      'g','kg','mg','lb','oz','ml','l','tsp','tbsp','cup','pint','quart','gallon','piece','pack','can'
+    ]
+    const newIngredient = reactive({
+      name: '',
+      quantity: 1,
+      units: ''
+    })
+    
+    // Catalog search state for ingredients
+    const selectedCatalogItem = ref(null)
+    const ingredientSearchQuery = ref('')
+    const showIngredientDropdown = ref(false)
+    const ingredientSearchInputRef = ref(null)
+    const editIngredientSearchInputRef = ref(null)
+    
+    // Admin status
+    const isAdmin = ref(false)
+    
+    // Computed properties
+    const currentUser = computed(() => authStore.user)
+    const route = useRoute()
+    const isOwner = computed(() => menu.value && currentUser.value && menu.value.owner === currentUser.value.id)
+    
+    // Permission computed properties
+    const canEditMenu = computed(() => isOwner.value || isAdmin.value)
+    const canEditRecipes = computed(() => isOwner.value || isAdmin.value)
+    
+    // Computed properties for ingredient catalog search
+    const filteredCatalogItems = computed(() => {
+      if (!ingredientSearchQuery.value || !catalogState.items.length) {
+        return []
+      }
+      const query = ingredientSearchQuery.value.toLowerCase().trim()
+      if (!query) {
+        return []
+      }
+      return catalogState.items.filter(item => 
+        item.name.toLowerCase().includes(query)
+      ).slice(0, 10) // Limit to 10 results for performance
+    })
+    
+    const availableUnits = computed(() => {
+      if (!selectedCatalogItem.value || !selectedCatalogItem.value.purchaseOptions || selectedCatalogItem.value.purchaseOptions.length === 0) {
+        return []
+      }
+      // Extract unique units from purchase options
+      const units = new Set()
+      selectedCatalogItem.value.purchaseOptions.forEach(po => {
+        if (po.units) {
+          units.add(po.units)
+        }
+      })
+      return Array.from(units).sort()
+    })
+    
+    // Watch for menu data changes to update edit form
+    watch(() => menu.value, (newMenu) => {
+      if (newMenu) {
+        editForm.name = newMenu.name
+        editForm.date = formatDateForInput(newMenu.date)
+      }
+    }, { immediate: true })
+    
+    // Watch for add recipe modal to ensure catalog is loaded
+    watch(() => showAddRecipeModal.value, (isOpen) => {
+      if (isOpen) {
+        catalogStore.ensureLoaded()
+      }
+    })
+    
+    // Load available recipes for adding (user-specific, not cached)
+    const loadAvailableRecipes = async () => {
+      if (currentUser.value) {
+        try {
+          const availableResponse = await cookBookService.getRecipesOwnedByUser(currentUser.value.id)
+          if (availableResponse && availableResponse.length > 0) {
+            availableRecipes.value = availableResponse.map(recipe => ({
+              id: recipe.recipe,
+              name: recipe.name
+            }))
+          }
+        } catch (err) {
+          console.error('Error loading available recipes:', err)
+        }
+      }
+    }
+    
+    // Cost loading functions
+    const loadMenuCost = async () => {
+      // Guard: don't load if menuId is missing or menu is not set
+      if (!props.menuId || !menu.value) {
+        return
+      }
+      
+      // Guard: don't load if already loading or if menu is still loading
+      if (menuCostLoading.value || isLoading.value) {
+        return
+      }
+      
+      menuCostLoading.value = true
+      menuCostError.value = null
+      
+      try {
+        const cost = await fetchMenuCost(props.menuId)
+        // Double-check menu still exists before setting cost (in case component unmounted)
+        if (menu.value && props.menuId) {
+          menuCost.value = cost
+        }
+      } catch (err) {
+        // Log error but don't throw - cost loading should never break menu display
+        console.error('Error loading menu cost (non-blocking):', err)
+        menuCostError.value = err.message || 'Failed to load menu cost'
+        // Only set to null if menu still exists
+        if (menu.value && props.menuId) {
+          menuCost.value = null
+        }
+      } finally {
+        // Only update loading state if menu still exists
+        if (menu.value && props.menuId) {
+          menuCostLoading.value = false
+        }
+      }
+    }
+    
+    const loadRecipeCost = async (recipeId) => {
+      // Guard: don't load if recipeId is missing or recipes don't exist
+      if (!recipeId || !recipes.value || recipes.value.length === 0) {
+        return
+      }
+      
+      // Guard: check if recipe still exists in recipes array
+      const recipeExists = recipes.value.some(r => r.id === recipeId)
+      if (!recipeExists) {
+        return
+      }
+      
+      recipeCostsLoading.value[recipeId] = true
+      
+      try {
+        const cost = await fetchRecipeCost(recipeId)
+        // Double-check recipe still exists before setting cost
+        if (recipes.value.some(r => r.id === recipeId)) {
+          recipeCosts.value[recipeId] = cost
+        }
+      } catch (err) {
+        // Log error but don't throw - cost loading should never break menu display
+        console.error(`Error loading recipe cost for ${recipeId} (non-blocking):`, err)
+        // Only set to null if recipe still exists
+        if (recipes.value.some(r => r.id === recipeId)) {
+          recipeCosts.value[recipeId] = null
+        }
+      } finally {
+        // Only update loading state if recipe still exists
+        if (recipes.value.some(r => r.id === recipeId)) {
+          recipeCostsLoading.value[recipeId] = false
+        }
+      }
+    }
+    
+    const loadAllRecipeCosts = async () => {
+      // Guard: don't load if recipes don't exist or menu is loading
+      if (!recipes.value || recipes.value.length === 0 || isLoading.value) {
+        if (!recipes.value || recipes.value.length === 0) {
+          recipeCosts.value = {}
+        }
+        return
+      }
+      
+      try {
+        // Load costs for all recipes in parallel, but catch individual errors
+        const costPromises = recipes.value.map(recipe => 
+          loadRecipeCost(recipe.id).catch(err => {
+            console.error(`Error loading cost for recipe ${recipe.id} (non-blocking):`, err)
+          })
+        )
+        await Promise.all(costPromises)
+      } catch (err) {
+        // This should never happen since we catch in loadRecipeCost, but just in case
+        console.error('Unexpected error in loadAllRecipeCosts (non-blocking):', err)
+      }
+    }
+    
+    // Methods
+    const retryLoadMenu = async () => {
+      console.log(`[MenuPage] retryLoadMenu called - menuId: ${props.menuId}`)
+      console.log(`[MenuPage] retryLoadMenu - Before refresh, store state:`, {
+        menuInStore: !!menuDetailState.menus[props.menuId],
+        isLoading: isLoading.value,
+        error: error.value
+      })
+      await menuDetailStore.refreshMenu(props.menuId)
+      console.log(`[MenuPage] retryLoadMenu - After refresh, store state:`, {
+        menuInStore: !!menuDetailState.menus[props.menuId],
+        isLoading: isLoading.value,
+        error: error.value
+      })
+      console.log(`[MenuPage] retryLoadMenu - Calling updateMenuData...`)
+      updateMenuData()
+      console.log(`[MenuPage] retryLoadMenu - updateMenuData completed`)
+    }
+    
+    const enterEditMode = () => {
+      isEditing.value = true
+      if (menu.value) {
+        editForm.name = menu.value.name
+        // Ensure date is in YYYY-MM-DD format for HTML date input
+        editForm.date = formatDateForInput(menu.value.date)
+      }
+    }
+    
+    const cancelEdit = () => {
+      isEditing.value = false
+      const currentMenu = menu.value
+      if (currentMenu) {
+        editForm.name = currentMenu.name
+        editForm.date = formatDateForInput(currentMenu.date)
+      }
+      clearFormErrors()
+    }
+    
+    const deleteMenu = async () => {
+      if (!menu.value) return
+      
+      if (!confirm(`Are you sure you want to delete the menu "${menu.value.name}"? This action cannot be undone.`)) {
+        return
+      }
+      
+      isSaving.value = true
+      
+      try {
+        // Delete the menu using the API
+        await menuCollectionService.deleteMenu(props.menuId)
+        
+        // Menu is automatically removed from weekly cart when deleted (backend synchronization)
+        // Invalidate cache so UI reflects the menu removal
+        if (menu.value?.date) {
+          const menuDateStr = menu.value.date.includes('T') 
+            ? new Date(menu.value.date).toISOString().split('T')[0] 
+            : menu.value.date
+          weeklyCartStore.clearWeekMenuMapping(menuDateStr)
+        }
+        
+        // Remove from cache
+        menuDetailStore.clearMenu(props.menuId)
+        
+        // Navigate back to menus page
+        emit('back-to-menus')
+      } catch (err) {
+        console.error('Error deleting menu:', err)
+        error.value = err.message || 'Failed to delete menu'
+        isSaving.value = false
+      }
+    }
+    
+    const saveChanges = async () => {
+      if (!validateMenuForm()) return
+      
+      isSaving.value = true
+      
+      try {
+        const updates = {}
+        
+        // Check if name has changed
+        if (editForm.name !== menu.value.name) {
+          updates.name = editForm.name
+        }
+        
+        // Check if date has changed - compare formatted dates
+        const currentFormattedDate = formatDateForInput(menu.value.date)
+        if (editForm.date !== currentFormattedDate) {
+          // Convert date string to Date object for the API
+          updates.date = new Date(editForm.date)
+          console.log('Date change detected:', {
+            original: menu.value.date,
+            originalFormatted: currentFormattedDate,
+            new: editForm.date,
+            newAsDate: updates.date
+          })
+        }
+        
+        if (Object.keys(updates).length > 0) {
+          console.log('Saving updates:', updates)
+          await menuCollectionService.updateMenu(props.menuId, updates)
+          
+          // Update cache
+          menuDetailStore.updateMenu(props.menuId, updates)
+          
+          // Menu is automatically moved between weekly carts when date changes (backend synchronization)
+          // Invalidate cache for both old and new dates so UI reflects the change
+          if (updates.date) {
+            // Invalidate old date cache
+            if (menu.value?.date) {
+              const oldDateStr = menu.value.date.includes('T') 
+                ? new Date(menu.value.date).toISOString().split('T')[0] 
+                : menu.value.date
+              weeklyCartStore.clearWeekMenuMapping(oldDateStr)
+            }
+            // Invalidate new date cache
+            const newDateStr = editForm.date
+            weeklyCartStore.clearWeekMenuMapping(newDateStr)
+          }
+        }
+        
+        isEditing.value = false
+      } catch (err) {
+        console.error('Error saving menu:', err)
+        menuDetailStore.setError(props.menuId, err.message || 'Failed to save menu changes')
+      } finally {
+        isSaving.value = false
+      }
+    }
+    
+    const validateMenuForm = () => {
+      clearFormErrors()
+      let isValid = true
+      
+      if (!editForm.name.trim()) {
+        formErrors.name = 'Menu name is required'
+        isValid = false
+      }
+      
+      if (!editForm.date) {
+        formErrors.date = 'Menu date is required'
+        isValid = false
+      }
+      
+      return isValid
+    }
+    
+    const clearFormErrors = () => {
+      Object.keys(formErrors).forEach(key => delete formErrors[key])
+      Object.keys(newRecipeErrors).forEach(key => delete newRecipeErrors[key])
+    }
+    
+    const addRecipeToMenu = async () => {
+      if (addRecipeMode.value === 'existing') {
+        if (!selectedRecipeId.value || !scalingFactor.value) {
+          menuDetailStore.setError(props.menuId, 'Please select a recipe and enter a scaling factor')
+          return
+        }
+      } else {
+        if (!validateNewRecipe()) return
+      }
+      
+      isAddingRecipe.value = true
+      
+      try {
+        let recipeId = selectedRecipeId.value
+        
+        if (addRecipeMode.value === 'new') {
+          // Create new recipe
+          const createResponse = await cookBookService.createRecipe(newRecipe.name, currentUser.value.id)
+          
+          // Validate that recipe was created successfully
+          if (!createResponse || !createResponse.recipe) {
+            throw new Error('Failed to create recipe: Invalid response from server')
+          }
+          
+          recipeId = createResponse.recipe
+          
+          // Validate that recipeId is a valid non-empty string
+          if (!recipeId || typeof recipeId !== 'string' || recipeId.trim() === '') {
+            throw new Error('Failed to create recipe: Invalid recipe ID returned from server')
+          }
+          
+          // Update recipe details
+          const updates = {}
+          if (newRecipe.dishType) updates.dishType = newRecipe.dishType
+          if (newRecipe.servingQuantity) updates.servingQuantity = newRecipe.servingQuantity
+          if (newRecipe.instructions) updates.instructions = newRecipe.instructions
+          
+          if (Object.keys(updates).length > 0) {
+            await cookBookService.updateRecipe(recipeId, updates)
+          }
+          
+          // Add ingredients
+          for (const ingredient of newRecipe.ingredients) {
+            await cookBookService.addRecipeIngredient(
+              recipeId,
+              ingredient.name,
+              ingredient.quantity,
+              ingredient.units
+            )
+          }
+        }
+        
+        // Final validation: ensure recipeId is valid before proceeding
+        if (!recipeId || typeof recipeId !== 'string' || recipeId.trim() === '') {
+          throw new Error('Invalid recipe ID: Cannot add recipe to menu without a valid recipe ID')
+        }
+        
+        // Add recipe to menu
+        await menuCollectionService.addRecipe(props.menuId, recipeId, scalingFactor.value)
+        
+        // Update cache
+        await menuDetailStore.addRecipe(props.menuId, recipeId, scalingFactor.value)
+        
+        // Refresh costs after adding recipe - use nextTick and error handling
+        nextTick(() => {
+          if (menu.value && !isLoading.value) {
+            loadMenuCost().catch(err => {
+              console.error('Error refreshing menu cost after adding recipe (non-blocking):', err)
+            })
+            loadRecipeCost(recipeId).catch(err => {
+              console.error('Error refreshing recipe cost after adding recipe (non-blocking):', err)
+            })
+          }
+        })
+        
+        // Reset form and close modal
+        resetAddRecipeForm()
+        showAddRecipeModal.value = false
+        
+      } catch (err) {
+        console.error('Error adding recipe:', err)
+        menuDetailStore.setError(props.menuId, err.message || 'Failed to add recipe to menu')
+      } finally {
+        isAddingRecipe.value = false
+      }
+    }
+    
+    const validateNewRecipe = () => {
+      clearFormErrors()
+      let isValid = true
+      
+      if (!newRecipe.name.trim()) {
+        newRecipeErrors.name = 'Recipe name is required'
+        isValid = false
+      }
+      
+      return isValid
+    }
+    
+    const resetAddRecipeForm = () => {
+      selectedRecipeId.value = ''
+      scalingFactor.value = 1
+      newRecipe.name = ''
+      newRecipe.dishType = ''
+      newRecipe.servingQuantity = 1
+      newRecipe.instructions = ''
+      newRecipe.ingredients = []
+      clearIngredientSelection()
+      newIngredient.quantity = 1
+      showIngredientForm.value = false
+      addRecipeMode.value = 'existing'
+    }
+    
+    function openAddIngredientForm() {
+      console.log('Opening add ingredient form')
+      showIngredientForm.value = true
+      newIngredient.name = ''
+      newIngredient.quantity = 1
+      newIngredient.units = ''
+      selectedCatalogItem.value = null
+      ingredientSearchQuery.value = ''
+      showIngredientDropdown.value = false
+      // Ensure catalog is loaded
+      catalogStore.ensureLoaded()
+      nextTick(() => {
+        console.log('Focusing add ingredient input')
+        ingredientSearchInputRef.value?.focus()
+      })
+    }
+
+    const selectCatalogItem = (item) => {
+      selectedCatalogItem.value = item
+      newIngredient.name = item.name
+      ingredientSearchQuery.value = item.name
+      showIngredientDropdown.value = false
+      // Reset units if current unit is not in available units
+      if (availableUnits.value.length > 0 && !availableUnits.value.includes(newIngredient.units)) {
+        newIngredient.units = availableUnits.value[0]
+      }
+    }
+    
+    const clearIngredientSelection = () => {
+      selectedCatalogItem.value = null
+      newIngredient.name = ''
+      ingredientSearchQuery.value = ''
+      newIngredient.units = ''
+      showIngredientDropdown.value = false
+    }
+    
+    const handleIngredientSearchInput = () => {
+      // Clear selection if user starts typing a different search
+      if (selectedCatalogItem.value && ingredientSearchQuery.value !== selectedCatalogItem.value.name) {
+        selectedCatalogItem.value = null
+        newIngredient.units = ''
+      }
+      showIngredientDropdown.value = true
+    }
+    
+    const handleIngredientSearchBlur = () => {
+      // Delay closing to allow click events on dropdown items to fire first
+      setTimeout(() => {
+        showIngredientDropdown.value = false
+      }, 200)
+    }
+    
+    function addIngredient() {
+      console.log('Attempting to add ingredient', JSON.stringify(newIngredient))
+      const name = (newIngredient.name || '').trim()
+      const units = (newIngredient.units || '').trim()
+      const qty = Number(newIngredient.quantity)
+      
+      // Validation: require catalog item selection and valid units
+      if (!selectedCatalogItem.value) {
+        console.log('Ingredient validation failed: No catalog item selected')
+        return
+      }
+      if (!name || !units || qty <= 0) {
+        console.log('Ingredient validation failed', { name, units, qty })
+        return
+      }
+      // Validate that units are from available units
+      if (availableUnits.value.length > 0 && !availableUnits.value.includes(units)) {
+        console.log('Ingredient validation failed: Invalid units', { units, availableUnits: availableUnits.value })
+        return
+      }
+      
+      console.log('Adding ingredient to newRecipe list')
+      newRecipe.ingredients.push({ name, units, quantity: qty })
+      clearIngredientSelection()
+      newIngredient.quantity = 1
+      showIngredientForm.value = false
+    }
+
+    function cancelAddIngredient() {
+      console.log('Cancelling add ingredient form')
+      showIngredientForm.value = false
+      clearIngredientSelection()
+      newIngredient.quantity = 1
+    }
+    
+    const removeIngredient = (index) => {
+      newRecipe.ingredients.splice(index, 1)
+    }
+    
+    const toggleRecipeActions = (recipeId) => {
+      const newSet = new Set(recipesShowingActions.value)
+      if (newSet.has(recipeId)) {
+        newSet.delete(recipeId)
+      } else {
+        newSet.add(recipeId)
+      }
+      recipesShowingActions.value = newSet
+    }
+    
+    const isRecipeShowingActions = (recipeId) => {
+      return recipesShowingActions.value.has(recipeId)
+    }
+    
+    const editRecipe = (recipe) => {
+      editingRecipe.value = recipe
+      editRecipeForm.name = recipe.name
+      editRecipeForm.dishType = recipe.dishType
+      editRecipeForm.servingQuantity = recipe.servingQuantity
+      editRecipeForm.instructions = recipe.instructions
+      editRecipeForm.ingredients = [...recipe.ingredients]
+      // Reset ingredient editing state
+      editingIngredientIndex.value = null
+      showEditIngredientForm.value = false
+      clearIngredientSelection()
+      showEditRecipeModal.value = true
+      // Hide recipe actions when opening edit modal
+      const newSet = new Set(recipesShowingActions.value)
+      newSet.delete(recipe.id)
+      recipesShowingActions.value = newSet
+      // Ensure catalog is loaded when editing recipe
+      catalogStore.ensureLoaded()
+    }
+    
+    function addIngredientToEdit() {
+      console.log('Attempting to add ingredient to edit list', JSON.stringify(newIngredient))
+      const name = (newIngredient.name || '').trim()
+      const units = (newIngredient.units || '').trim()
+      const qty = Number(newIngredient.quantity)
+      
+      // Validation: require catalog item selection and valid units
+      if (!selectedCatalogItem.value) {
+        console.log('Edit ingredient validation failed: No catalog item selected')
+        return
+      }
+      if (!name || !units || qty <= 0) {
+        console.log('Edit ingredient validation failed', { name, units, qty })
+        return
+      }
+      // Validate that units are from available units
+      if (availableUnits.value.length > 0 && !availableUnits.value.includes(units)) {
+        console.log('Edit ingredient validation failed: Invalid units', { units, availableUnits: availableUnits.value })
+        return
+      }
+      
+      console.log('Adding ingredient to editRecipeForm ingredients')
+      editRecipeForm.ingredients.push({ name, units, quantity: qty })
+      clearIngredientSelection()
+      newIngredient.quantity = 1
+      showEditIngredientForm.value = false
+    }
+
+    function openEditIngredientForm() {
+      console.log('Opening edit ingredient form for new ingredient')
+      // Close any existing ingredient edit if open
+      editingIngredientIndex.value = null
+      showEditIngredientForm.value = true
+      clearIngredientSelection()
+      newIngredient.quantity = 1
+      // Ensure catalog is loaded
+      catalogStore.ensureLoaded()
+      nextTick(() => {
+        console.log('Focusing edit ingredient input')
+        editIngredientSearchInputRef.value?.focus()
+      })
+    }
+    
+    const startEditIngredient = (index) => {
+      console.log('Starting to edit ingredient at index', index)
+      // Close "Add New Ingredient" form if open
+      showEditIngredientForm.value = false
+      editingIngredientIndex.value = index
+      const ingredient = editRecipeForm.ingredients[index]
+      
+      // Pre-populate form with current ingredient data
+      newIngredient.name = ingredient.name
+      newIngredient.quantity = ingredient.quantity
+      newIngredient.units = ingredient.units
+      
+      // Try to find matching catalog item by name
+      const matchingItem = catalogState.items.find(item => 
+        item.name.toLowerCase() === ingredient.name.toLowerCase()
+      )
+      
+      if (matchingItem) {
+        selectedCatalogItem.value = matchingItem
+        ingredientSearchQuery.value = matchingItem.name
+        // Reset units if current unit is not in available units
+        if (availableUnits.value.length > 0 && !availableUnits.value.includes(newIngredient.units)) {
+          newIngredient.units = availableUnits.value[0]
+        }
+      } else {
+        // If not found in catalog, clear selection but keep the search query
+        selectedCatalogItem.value = null
+        ingredientSearchQuery.value = ingredient.name
+      }
+      
+      showIngredientDropdown.value = false
+      
+      // Ensure catalog is loaded
+      catalogStore.ensureLoaded()
+      
+      nextTick(() => {
+        editIngredientSearchInputRef.value?.focus()
+      })
+    }
+    
+    const saveEditedIngredient = () => {
+      console.log('Saving edited ingredient at index', editingIngredientIndex.value)
+      const name = (newIngredient.name || '').trim()
+      const units = (newIngredient.units || '').trim()
+      const qty = Number(newIngredient.quantity)
+      
+      // Validation: require catalog item selection and valid units
+      if (!selectedCatalogItem.value) {
+        console.log('Edit ingredient validation failed: No catalog item selected')
+        return
+      }
+      if (!name || !units || qty <= 0) {
+        console.log('Edit ingredient validation failed', { name, units, qty })
+        return
+      }
+      // Validate that units are from available units
+      if (availableUnits.value.length > 0 && !availableUnits.value.includes(units)) {
+        console.log('Edit ingredient validation failed: Invalid units', { units, availableUnits: availableUnits.value })
+        return
+      }
+      
+      // Update the ingredient at the specific index
+      if (editingIngredientIndex.value !== null && editingIngredientIndex.value >= 0 && editingIngredientIndex.value < editRecipeForm.ingredients.length) {
+        editRecipeForm.ingredients[editingIngredientIndex.value] = {
+          name,
+          units,
+          quantity: qty
+        }
+        console.log('Updated ingredient at index', editingIngredientIndex.value)
+      }
+      
+      // Clear edit state
+      cancelEditIngredient()
+    }
+    
+    const cancelEditIngredient = () => {
+      console.log('Cancelling ingredient edit')
+      editingIngredientIndex.value = null
+      clearIngredientSelection()
+      newIngredient.quantity = 1
+    }
+
+    function cancelAddIngredientToEdit() {
+      console.log('Cancelling edit ingredient form')
+      showEditIngredientForm.value = false
+      editingIngredientIndex.value = null
+      clearIngredientSelection()
+      newIngredient.quantity = 1
+    }
+    
+    const removeIngredientFromEdit = (index) => {
+      // If removing the ingredient being edited, cancel the edit first
+      if (editingIngredientIndex.value === index) {
+        cancelEditIngredient()
+      }
+      editRecipeForm.ingredients.splice(index, 1)
+    }
+    
+    const saveRecipeChanges = async () => {
+      isSavingRecipe.value = true
+      
+      try {
+        const recipeId = editingRecipe.value.id
+        
+        // Update recipe details
+        const updates = {}
+        if (editRecipeForm.name !== editingRecipe.value.name) updates.name = editRecipeForm.name
+        if (editRecipeForm.dishType !== editingRecipe.value.dishType) updates.dishType = editRecipeForm.dishType
+        if (editRecipeForm.servingQuantity !== editingRecipe.value.servingQuantity) updates.servingQuantity = editRecipeForm.servingQuantity
+        if (editRecipeForm.instructions !== editingRecipe.value.instructions) updates.instructions = editRecipeForm.instructions
+        
+        if (Object.keys(updates).length > 0) {
+          await cookBookService.updateRecipe(recipeId, updates)
+        }
+        
+        // Update ingredients (simplified - remove all and re-add)
+        // In a real app, you'd want to be more sophisticated about this
+        const currentIngredients = editingRecipe.value.ingredients
+        const newIngredients = editRecipeForm.ingredients
+        
+        // Remove ingredients that are no longer in the list
+        for (const ingredient of currentIngredients) {
+          if (!newIngredients.find(ing => ing.name === ingredient.name)) {
+            await cookBookService.removeRecipeIngredient(recipeId, ingredient.name)
+          }
+        }
+        
+        // Add or update ingredients
+        for (const ingredient of newIngredients) {
+          const existingIngredient = currentIngredients.find(ing => ing.name === ingredient.name)
+          if (existingIngredient) {
+            if (existingIngredient.quantity !== ingredient.quantity || existingIngredient.units !== ingredient.units) {
+              await cookBookService.updateRecipeIngredient(recipeId, ingredient.name, ingredient.quantity, ingredient.units)
+            }
+          } else {
+            await cookBookService.addRecipeIngredient(recipeId, ingredient.name, ingredient.quantity, ingredient.units)
+          }
+        }
+        
+        // Update cache
+        menuDetailStore.updateRecipe(props.menuId, recipeId, updates)
+        menuDetailStore.updateRecipeIngredients(props.menuId, recipeId, newIngredients)
+        
+        // Refresh costs after recipe changes (ingredients may affect cost) - use nextTick and error handling
+        nextTick(() => {
+          if (menu.value && !isLoading.value) {
+            loadMenuCost().catch(err => {
+              console.error('Error refreshing menu cost after recipe changes (non-blocking):', err)
+            })
+            loadRecipeCost(recipeId).catch(err => {
+              console.error('Error refreshing recipe cost after recipe changes (non-blocking):', err)
+            })
+          }
+        })
+        
+        showEditRecipeModal.value = false
+        
+      } catch (err) {
+        console.error('Error saving recipe:', err)
+        menuDetailStore.setError(props.menuId, err.message || 'Failed to save recipe changes')
+      } finally {
+        isSavingRecipe.value = false
+      }
+    }
+    
+    const changeScaling = (recipe) => {
+      editingRecipe.value = recipe
+      newScalingFactor.value = recipe.scalingFactor
+      showScalingModal.value = true
+      // Hide recipe actions when opening scaling modal
+      const newSet = new Set(recipesShowingActions.value)
+      newSet.delete(recipe.id)
+      recipesShowingActions.value = newSet
+    }
+    
+    const updateScalingFactor = async () => {
+      isUpdatingScaling.value = true
+      
+      try {
+        await menuCollectionService.changeRecipeScaling(
+          props.menuId,
+          editingRecipe.value.id,
+          newScalingFactor.value
+        )
+        
+        // Update cache
+        menuDetailStore.updateRecipeScaling(props.menuId, editingRecipe.value.id, newScalingFactor.value)
+        
+        // Refresh costs after scaling change - use nextTick and error handling
+        nextTick(() => {
+          if (menu.value && !isLoading.value) {
+            loadMenuCost().catch(err => {
+              console.error('Error refreshing menu cost after scaling change (non-blocking):', err)
+            })
+          }
+        })
+        
+        showScalingModal.value = false
+        
+      } catch (err) {
+        console.error('Error updating scaling:', err)
+        menuDetailStore.setError(props.menuId, err.message || 'Failed to update scaling factor')
+      } finally {
+        isUpdatingScaling.value = false
+      }
+    }
+    
+    const removeRecipe = async (recipe) => {
+      if (!confirm(`Are you sure you want to remove "${recipe.name}" from this menu?`)) {
+        return
+      }
+      
+      // Hide recipe actions before removing
+      const newSet = new Set(recipesShowingActions.value)
+      newSet.delete(recipe.id)
+      recipesShowingActions.value = newSet
+      
+      try {
+        await menuCollectionService.removeRecipe(props.menuId, recipe.id)
+        
+        // Update cache
+        menuDetailStore.removeRecipe(props.menuId, recipe.id)
+        
+        // Remove recipe cost from state
+        delete recipeCosts.value[recipe.id]
+        delete recipeCostsLoading.value[recipe.id]
+        
+        // Refresh menu cost after removing recipe - use nextTick and error handling
+        nextTick(() => {
+          if (menu.value && !isLoading.value) {
+            loadMenuCost().catch(err => {
+              console.error('Error refreshing menu cost after removing recipe (non-blocking):', err)
+            })
+          }
+        })
+      } catch (err) {
+        console.error('Error removing recipe:', err)
+        menuDetailStore.setError(props.menuId, err.message || 'Failed to remove recipe from menu')
+      }
+    }
+    
+    const closeAddRecipeModal = () => {
+      showAddRecipeModal.value = false
+      resetAddRecipeForm()
+    }
+    
+    const closeEditRecipeModal = () => {
+      showEditRecipeModal.value = false
+      editingRecipe.value = null
+      editingIngredientIndex.value = null
+      showEditIngredientForm.value = false
+      clearIngredientSelection()
+    }
+    
+    const closeScalingModal = () => {
+      showScalingModal.value = false
+      editingRecipe.value = null
+    }
+    
     const goBack = () => {
       emit('back-to-menus')
     }
     
-    // Lifecycle
+    // Lifecycle - mount
     onMounted(async () => {
-      await loadMenu()
-      // If navigated with ?edit=1, open directly in edit mode
-      if (route?.query?.edit === '1' || route?.query?.edit === 'true') {
-        enterEditMode()
+      console.log('[MenuPage] ========== onMounted START ==========')
+      console.log('[MenuPage] onMounted - menuId:', props.menuId)
+      console.log('[MenuPage] onMounted - Initial local refs:', {
+        menu: menu.value ? 'exists' : 'null',
+        recipesCount: recipes.value.length,
+        ownerUsername: ownerUsername.value
+      })
+      console.log('[MenuPage] onMounted - Initial store state:', {
+        isLoading: isLoading.value,
+        error: error.value,
+        menuInStore: !!menuDetailState.menus[props.menuId]
+      })
+      console.log('[MenuPage] onMounted - menuDetailState.menus keys: [', Object.keys(menuDetailState.menus).join(', '), ']')
+      
+      try {
+        // Always ensure menu is loaded (will use cache if available and valid)
+        console.log('[MenuPage] onMounted - Calling ensureMenuLoaded...')
+        await menuDetailStore.ensureMenuLoaded(props.menuId)
+        console.log('[MenuPage] onMounted - ensureMenuLoaded completed')
+        console.log('[MenuPage] onMounted - After ensureMenuLoaded, store state:', {
+          isLoading: isLoading.value,
+          error: error.value,
+          menuInStore: !!menuDetailState.menus[props.menuId],
+          menuData: menuDetailState.menus[props.menuId] ? 'exists' : 'null'
+        })
+        
+        // Always sync from store state after loading (defensive update)
+        console.log('[MenuPage] onMounted - Calling updateMenuData...')
+        updateMenuData()
+        console.log('[MenuPage] onMounted - updateMenuData completed')
+        console.log('[MenuPage] Menu data after ensureMenuLoaded:', { 
+          menu: menu.value ? 'exists' : 'null',
+          menuName: menu.value?.name,
+          recipesCount: recipes.value.length,
+          ownerUsername: ownerUsername.value 
+        })
+        
+        loadAvailableRecipes()
+        
+        // Load admin status
+        if (currentUser.value) {
+          try {
+            const adminStatus = await authStore.checkAdminStatus()
+            isAdmin.value = adminStatus
+          } catch (err) {
+            console.error('Error checking admin status:', err)
+            isAdmin.value = false
+          }
+        }
+        
+        // If navigated with ?edit=1, open directly in edit mode
+        if (route?.query?.edit === '1' || route?.query?.edit === 'true') {
+          enterEditMode()
+        }
+      } catch (error) {
+        console.error('[MenuPage] Error in onMounted:', error)
+        console.error('[MenuPage] onMounted ERROR - error details:', error)
+        console.error('[MenuPage] onMounted ERROR - store state:', {
+          isLoading: isLoading.value,
+          error: error.value,
+          menuInStore: !!menuDetailState.menus[props.menuId]
+        })
+        // Ensure local state reflects error state
+        updateMenuData()
       }
+      console.log('[MenuPage] ========== onMounted END ==========')
     })
     
-    // Watch for menuId changes
-    watch(() => props.menuId, () => {
-      if (props.menuId) {
-        loadMenu()
+    // Watch for menuId changes to load different menu
+    watch(() => props.menuId, async (newMenuId, oldMenuId) => {
+      console.log('[MenuPage] ========== menuId watcher TRIGGERED ==========')
+      console.log('[MenuPage] menuId watcher - oldMenuId:', oldMenuId)
+      console.log('[MenuPage] menuId watcher - newMenuId:', newMenuId)
+      console.log(`[MenuPage] menuId watcher - Condition: newMenuId (${newMenuId}) && newMenuId !== oldMenuId (${newMenuId !== oldMenuId}) = ${newMenuId && newMenuId !== oldMenuId}`)
+      
+      if (newMenuId && newMenuId !== oldMenuId) {
+        console.log('[MenuPage] menuId changed from', oldMenuId, 'to', newMenuId)
+        console.log('[MenuPage] menuId watcher - Before reset, local refs:', {
+          menu: menu.value ? 'exists' : 'null',
+          recipesCount: recipes.value.length,
+          ownerUsername: ownerUsername.value
+        })
+        console.log('[MenuPage] menuId watcher - Store state for old menu:', {
+          oldMenuInStore: oldMenuId ? !!menuDetailState.menus[oldMenuId] : 'N/A',
+          oldMenuLoading: oldMenuId ? menuDetailState.loading[oldMenuId] : 'N/A'
+        })
+        console.log('[MenuPage] menuId watcher - Store state for new menu:', {
+          newMenuInStore: !!menuDetailState.menus[newMenuId],
+          newMenuLoading: menuDetailState.loading[newMenuId]
+        })
+        
+        try {
+          // Reset local refs immediately when menuId changes
+          console.log('[MenuPage] menuId watcher - Resetting local refs...')
+          menu.value = null
+          recipes.value = []
+          ownerUsername.value = ''
+          console.log('[MenuPage] menuId watcher - After reset, local refs:', {
+            menu: menu.value,
+            recipesCount: recipes.value.length,
+            ownerUsername: ownerUsername.value
+          })
+          
+          // Load new menu
+          console.log('[MenuPage] menuId watcher - Calling ensureMenuLoaded for new menuId...')
+          await menuDetailStore.ensureMenuLoaded(newMenuId)
+          console.log('[MenuPage] menuId watcher - ensureMenuLoaded completed')
+          console.log('[MenuPage] menuId watcher - After ensureMenuLoaded, store state:', {
+            newMenuInStore: !!menuDetailState.menus[newMenuId],
+            newMenuLoading: menuDetailState.loading[newMenuId],
+            newMenuData: menuDetailState.menus[newMenuId] ? 'exists' : 'null'
+          })
+          
+          // Sync from store
+          console.log('[MenuPage] menuId watcher - Calling updateMenuData...')
+          updateMenuData()
+          console.log('[MenuPage] menuId watcher - updateMenuData completed')
+          console.log('[MenuPage] menuId watcher - After updateMenuData, local refs:', {
+            menu: menu.value ? 'exists' : 'null',
+            menuName: menu.value?.name,
+            recipesCount: recipes.value.length,
+            ownerUsername: ownerUsername.value
+          })
+          
+          loadAvailableRecipes()
+        } catch (error) {
+          console.error('[MenuPage] Error loading menu on menuId change:', error)
+          console.error('[MenuPage] menuId watcher ERROR - error details:', error)
+          console.error('[MenuPage] menuId watcher ERROR - store state:', {
+            newMenuInStore: !!menuDetailState.menus[newMenuId],
+            newMenuLoading: menuDetailState.loading[newMenuId],
+            newMenuError: menuDetailState.errors[newMenuId]
+          })
+          updateMenuData()
+        }
+      } else {
+        console.log('[MenuPage] menuId watcher - No change detected, skipping')
+      }
+      console.log('[MenuPage] ========== menuId watcher END ==========')
+    })
+    
+    // Watch currentUser to refresh admin status when user changes
+    watch(currentUser, async (newUser) => {
+      if (newUser) {
+        try {
+          const adminStatus = await authStore.checkAdminStatus()
+          isAdmin.value = adminStatus
+        } catch (err) {
+          console.error('Error checking admin status:', err)
+          isAdmin.value = false
+        }
+      } else {
+        isAdmin.value = false
       }
     })
     
@@ -1163,6 +2054,7 @@ const editIngredientNameInput = ref(null)
       showScalingModal,
       showIngredientForm,
       showEditIngredientForm,
+      editingIngredientIndex,
       addRecipeMode,
       selectedRecipeId,
       scalingFactor,
@@ -1175,11 +2067,32 @@ const editIngredientNameInput = ref(null)
       unitOptions,
       currentUser,
       isOwner,
+      isAdmin,
+      canEditMenu,
+      canEditRecipes,
+      
+      // Catalog search state
+      selectedCatalogItem,
+      ingredientSearchQuery,
+      showIngredientDropdown,
+      filteredCatalogItems,
+      availableUnits,
+      catalogState,
+      ingredientSearchInputRef,
+      editIngredientSearchInputRef,
+      
+      // Cost state
+      menuCost,
+      menuCostLoading,
+      menuCostError,
+      recipeCosts,
+      recipeCostsLoading,
       
       // Methods
-      loadMenu,
+      retryLoadMenu,
       enterEditMode,
       cancelEdit,
+      deleteMenu,
       saveChanges,
       addRecipeToMenu,
       addIngredient,
@@ -1187,18 +2100,28 @@ const editIngredientNameInput = ref(null)
       cancelAddIngredient,
       removeIngredient,
       editRecipe,
+      toggleRecipeActions,
+      isRecipeShowingActions,
       addIngredientToEdit,
       cancelAddIngredientToEdit,
       removeIngredientFromEdit,
       openEditIngredientForm,
+      startEditIngredient,
+      saveEditedIngredient,
+      cancelEditIngredient,
       saveRecipeChanges,
       changeScaling,
+      selectCatalogItem,
+      clearIngredientSelection,
+      handleIngredientSearchInput,
+      handleIngredientSearchBlur,
       updateScalingFactor,
       removeRecipe,
       closeAddRecipeModal,
       closeEditRecipeModal,
       closeScalingModal,
       formatDate,
+      formatCost,
       goBack
     }
   }
@@ -1269,17 +2192,31 @@ const editIngredientNameInput = ref(null)
 /* Menu Header */
 .menu-header {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 1rem;
   margin-bottom: 2rem;
   padding-bottom: 1rem;
   border-bottom: 2px solid var(--primary-light);
 }
 
-.menu-title-section {
+.menu-title-row {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .menu-title-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .menu-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 
 .back-btn {
@@ -1298,10 +2235,11 @@ const editIngredientNameInput = ref(null)
   color: var(--primary-color);
 }
 
-.menu-info h1 {
+.menu-title {
   color: var(--primary-color);
-  margin: 0 0 0.5rem 0;
+  margin: 0;
   font-size: 2.5rem;
+  flex: 1;
 }
 
 .menu-meta {
@@ -1319,10 +2257,10 @@ const editIngredientNameInput = ref(null)
 
 .edit-actions {
   display: flex;
-  gap: 1.5rem; /* extra separation between Save and Cancel */
+  gap: 1.5rem; /* extra separation between Save, Cancel, and Delete */
 }
 
-.edit-btn, .save-btn, .cancel-btn {
+.edit-btn, .save-btn, .cancel-btn, .delete-btn {
   padding: 0.75rem 1.5rem;
   border: none;
   border-radius: 6px;
@@ -1335,9 +2273,11 @@ const editIngredientNameInput = ref(null)
 .edit-btn:focus,
 .save-btn:focus,
 .cancel-btn:focus,
+.delete-btn:focus,
 .edit-btn:active,
 .save-btn:active,
-.cancel-btn:active {
+.cancel-btn:active,
+.delete-btn:active {
   outline: none;
   box-shadow: none;
 }
@@ -1345,18 +2285,25 @@ const editIngredientNameInput = ref(null)
 /* Keep accessible outline only when keyboard focusing */
 .edit-btn:focus-visible,
 .save-btn:focus-visible,
-.cancel-btn:focus-visible {
+.cancel-btn:focus-visible,
+.delete-btn:focus-visible {
   outline: 2px solid rgba(0,0,0,0.25);
   outline-offset: 2px;
 }
 
 .edit-btn {
-  background: var(--primary-color);
+  background: #002395;
   color: white;
+  font-size: 1.1rem;
+  padding: 1rem 2rem;
+  font-weight: 600;
+  border: 1px solid #001f7a;
 }
 
 .edit-btn:hover {
-  background: var(--secondary-color);
+  background: #001f7a;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 35, 149, 0.3);
 }
 
 .save-btn {
@@ -1384,6 +2331,24 @@ const editIngredientNameInput = ref(null)
 }
 
 .cancel-btn {
+  /* White */
+  background: #ffffff;
+  color: #000000;
+  font-size: 1.1rem;
+  padding: 1rem 2rem;
+  font-weight: 600;
+  border: 1px solid #cccccc;
+  box-shadow: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cancel-btn:hover {
+  background: #f5f5f5;
+  color: #000000;
+  box-shadow: none;
+}
+
+.delete-btn {
   /* French red */
   background: #ed2939;
   color: #ffffff;
@@ -1395,9 +2360,16 @@ const editIngredientNameInput = ref(null)
   -webkit-tap-highlight-color: transparent;
 }
 
-.cancel-btn:hover {
+.delete-btn:hover:not(:disabled) {
   background: #d21e2e;
   color: #ffffff;
+  box-shadow: none;
+}
+
+.delete-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  transform: none;
   box-shadow: none;
 }
 
@@ -1480,8 +2452,9 @@ button::-moz-focus-inner { border: 0; }
 
 .section-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
+  gap: 1rem;
   margin-bottom: 2rem;
 }
 
@@ -1492,18 +2465,21 @@ button::-moz-focus-inner { border: 0; }
 }
 
 .add-recipe-btn, .add-first-recipe-btn {
-  background: var(--primary-color);
+  background: #002395;
   color: white;
-  border: none;
+  border: 1px solid #001f7a;
   padding: 0.75rem 1.5rem;
   border-radius: 6px;
   cursor: pointer;
+  font-size: 0.9rem;
   font-weight: 500;
   transition: all 0.3s ease;
 }
 
 .add-recipe-btn:hover, .add-first-recipe-btn:hover {
-  background: var(--secondary-color);
+  background: #001f7a;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 35, 149, 0.3);
 }
 
 /* Recipe Cards */
@@ -1561,7 +2537,7 @@ button::-moz-focus-inner { border: 0; }
   justify-content: flex-start;
 }
 
-.recipe-meta span {
+.recipe-meta > span {
   background: var(--primary-light);
   color: var(--primary-color);
   padding: 0.25rem 0.75rem;
@@ -1576,13 +2552,24 @@ button::-moz-focus-inner { border: 0; }
   flex-wrap: wrap;
 }
 
-.edit-recipe-btn, .scaling-btn, .remove-recipe-btn {
+.edit-recipe-btn, .scaling-btn, .remove-recipe-btn, .cancel-edit-btn {
   padding: 0.5rem 1rem;
   border: none;
   border-radius: 4px;
   cursor: pointer;
   font-size: 0.9rem;
   transition: all 0.3s ease;
+  margin-left: 0.5rem;
+}
+
+.recipe-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.recipe-action-buttons > button:first-child {
+  margin-left: 0;
 }
 
 .edit-recipe-btn {
@@ -1621,6 +2608,18 @@ button::-moz-focus-inner { border: 0; }
   box-shadow: 0 2px 4px rgba(237, 41, 57, 0.3);
 }
 
+.cancel-edit-btn {
+  background: #6c757d;
+  color: white;
+  border: 1px solid #5a6268;
+}
+
+.cancel-edit-btn:hover {
+  background: #5a6268;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(108, 117, 125, 0.3);
+}
+
 /* Recipe Details */
 .recipe-details {
   display: grid;
@@ -1637,7 +2636,7 @@ button::-moz-focus-inner { border: 0; }
 
 .instructions-ingredients-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 2rem;
   align-items: start;
 }
@@ -1666,6 +2665,11 @@ button::-moz-focus-inner { border: 0; }
   border-bottom: none;
 }
 
+.ingredient-name {
+  flex: 1;
+  min-width: 150px;
+}
+
 .ingredient-quantity {
   font-weight: 600;
   color: var(--primary-color);
@@ -1675,10 +2679,6 @@ button::-moz-focus-inner { border: 0; }
 .ingredient-units {
   color: var(--secondary-color);
   min-width: 40px;
-}
-
-.ingredient-name {
-  flex: 1;
 }
 
 .instructions-text {
@@ -1931,6 +2931,19 @@ button::-moz-focus-inner { border: 0; }
   grid-column: 3;
 }
 
+.ingredient-units-input:disabled {
+  background-color: #e9ecef !important;
+  color: #6c757d !important;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.ingredient-units-input:not(:disabled) {
+  background-color: white;
+  color: #000;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
 
 .add-ingredient-btn {
   grid-column: 4;
@@ -1980,18 +2993,32 @@ button::-moz-focus-inner { border: 0; }
   background: #ff5252;
 }
 
+.edit-ingredient-btn {
+  padding: 0.4rem 0.8rem;
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+}
+
+.edit-ingredient-btn:hover {
+  background: var(--secondary-color);
+}
+
 .remove-ingredient-btn {
   background: #dc3545;
   color: white;
   border: none;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
+  padding: 0.4rem 0.8rem;
+  border-radius: 4px;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.2rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
 }
 
 .remove-ingredient-btn:hover {
@@ -2046,10 +3073,6 @@ button::-moz-focus-inner { border: 0; }
     flex: 1;
   }
 
-  .instructions-ingredients-grid {
-    grid-template-columns: 1fr;
-  }
-  
   .add-ingredient-form {
     grid-template-columns: 1fr;
     gap: 0.5rem;

@@ -172,6 +172,7 @@ export default {
 
 .username {
   font-weight: 500;
+  font-size: 1.2rem;
   opacity: 0.9;
   color: var(--french-red);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
@@ -203,7 +204,7 @@ export default {
   border: none;
   padding: 0.75rem 1rem;
   color: var(--white);
-  font-size: 1rem;
+  font-size: 1.2rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.3s ease;

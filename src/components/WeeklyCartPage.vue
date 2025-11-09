@@ -36,9 +36,9 @@
     </div>
 
     <!-- Loading State -->
-    <div v-if="isLoading" class="loading-state">
+    <div v-if="isLoading || isAddingMenu" class="loading-state">
       <div class="spinner"></div>
-      <p>Loading weekly cart...</p>
+      <p>{{ isAddingMenu ? 'Adding menu...' : 'Loading weekly cart...' }}</p>
     </div>
 
     <!-- Error State -->
@@ -48,7 +48,7 @@
     </div>
 
     <!-- Week Grid -->
-    <div v-if="!isLoading && !error" class="week-grid">
+    <div v-if="!isLoading && !isAddingMenu && !error" class="week-grid">
       <!-- Day Headers -->
       <div class="day-headers">
         <div v-for="(dayName, index) in dayNames" :key="index" 
@@ -106,16 +106,13 @@
           <div class="sorting-controls">
             <span class="sort-label">Sort:</span>
             <label class="sort-toggle">
-              <input type="checkbox" v-model="sortByMenu" @change="sortByStore = false; applySorting()">
+              <input type="checkbox" v-model="sortByMenu" @change="handleMenuSortChange">
               <span>By Menu</span>
             </label>
-            <button 
-              @click="sortByMenu = false; sortByStore = true; applySorting()" 
-              :class="['sort-btn', { 'active': sortByStore && !sortByMenu }]"
-              :disabled="true"
-              title="By Store sorting requires PurchaseSystem integration">
-              By Store
-            </button>
+            <label class="sort-toggle">
+              <input type="checkbox" v-model="sortByStore" @change="handleStoreSortChange">
+              <span>By Store</span>
+            </label>
           </div>
           <button @click="loadWeeklyIngredients" class="action-btn secondary-btn" :disabled="isLoadingIngredients">
             {{ isLoadingIngredients ? 'Loading...' : 'Refresh Ingredients' }}
@@ -136,27 +133,24 @@
       <div v-else class="ingredients-list">
         <div class="ingredients-summary">
           <p><strong>Total Ingredients:</strong> {{ ingredientCount }}</p>
-          <p><strong>Total Quantity:</strong> {{ totalQuantity }}</p>
+          <p><strong>Total Cost:</strong> {{ formatCost(totalCost) }}</p>
         </div>
         
         <div class="ingredients-grid">
-          <div v-for="ingredient in sortedIngredients" :key="`${ingredient.name}-${ingredient.units}`" 
-               :class="['ingredient-item', { 'menu-header': ingredient.isMenuHeader }]">
+          <div v-for="ingredient in sortedIngredients" :key="`${ingredient.name}-${ingredient.units}-${ingredient.store || ''}-${ingredient.isMenuHeader || ingredient.isStoreHeader ? 'header' : ''}`" 
+               :class="['ingredient-item', { 'menu-header': ingredient.isMenuHeader, 'store-header': ingredient.isStoreHeader }]">
             <div class="ingredient-info">
-              <h4>{{ ingredient.name }}</h4>
-              <p v-if="!ingredient.isMenuHeader" class="ingredient-details">
-                <span class="quantity">{{ formatQuantity(ingredient.totalQuantity) }}</span>
-                <span class="units">{{ ingredient.units }}</span>
-                <span class="sources" v-if="ingredient.sources && ingredient.sources.length > 0">
-                  ({{ ingredient.sources.length }} menu{{ ingredient.sources.length !== 1 ? 's' : '' }})
-                </span>
-              </p>
+              <h4 v-if="!ingredient.isMenuHeader && !ingredient.isStoreHeader">
+                {{ ingredient.name }} <span class="ingredient-cost">{{ formatCost(ingredient.totalCost) }}</span>
+              </h4>
+              <h4 v-else>{{ ingredient.name }}</h4>
             </div>
-            <div v-if="!ingredient.isMenuHeader && ingredient.sources && ingredient.sources.length > 0" class="ingredient-sources">
-              <div v-for="source in ingredient.sources" :key="source.menuId" class="source-item">
+            <div v-if="!ingredient.isMenuHeader && !ingredient.isStoreHeader && ingredient.sources && ingredient.sources.length > 0" class="ingredient-sources">
+              <div v-for="(source, index) in ingredient.sources" :key="`${source.menuId}-${source.date}-${index}`" class="source-item">
                 <span class="source-menu">{{ source.menuName }}</span>
                 <span class="source-date">{{ source.date }}</span>
                 <span class="source-quantity">{{ formatQuantity(source.quantity) }} {{ source.units || ingredient.units }}</span>
+                <span class="source-store">{{ source.store || 'Unknown Store' }}</span>
               </div>
             </div>
           </div>
@@ -170,7 +164,7 @@
       <div class="modal" @click.stop>
         <h3>Add Menu to {{ formatDate(selectedDate) }}</h3>
         <div class="modal-content">
-          <p>This will create a new menu for {{ formatDate(selectedDate) }} and add it to the weekly cart. If no cart exists for this week, one will be created automatically.</p>
+          <p>This will create a new menu for {{ formatDate(selectedDate) }}. The menu will be automatically added to the weekly cart for this week. If no cart exists for this week, one will be created automatically.</p>
           <div class="modal-actions">
             <button @click="confirmAddMenu" class="action-btn primary-btn" :disabled="isLoading">
               Create Menu
@@ -206,24 +200,47 @@
 <script>
 import { ref, computed, onMounted, watch } from 'vue'
 import { weeklyCartService } from '../services/weeklyCartService.js'
+import { weeklyCartStore, weeklyCartState } from '../stores/weeklyCartStore.js'
 import { purchaseSystemService } from '../services/purchaseSystemService.js'
 import { menuCollectionService } from '../services/menuCollectionService.js'
 import { cookBookService } from '../services/cookBookService.js'
 import { authState } from '../stores/authStore.js'
 import { authService } from '../services/authService.js'
+import { fetchCartCost, fetchMenuCost, formatCost } from '../utils/costUtils.js'
+import { storeCatalogService } from '../services/storeCatalogService.js'
 
 export default {
   name: 'WeeklyCartPage',
   setup(props, { emit }) {
-    // Reactive state
-    const isLoading = ref(false)
-    const error = ref(null)
+    // Local UI state
     const currentWeekStart = ref(weeklyCartService.getWeekStart(new Date()))
-    const currentCart = ref(null)
     const weekMenus = ref({})
     const weeklyIngredients = ref([])
     const isLoadingIngredients = ref(false)
     const sortedIngredients = ref([])
+    const isAddingMenu = ref(false)
+    
+    // Use store state for cart data
+    const isLoading = computed(() => {
+      const weekStart = weeklyCartService.formatDate(currentWeekStart.value)
+      return weeklyCartState.loading[weekStart] || false
+    })
+    
+    const error = computed(() => {
+      const weekStart = weeklyCartService.formatDate(currentWeekStart.value)
+      return weeklyCartState.errors[weekStart] || null
+    })
+    
+    const currentCart = computed(() => {
+      const weekStart = weeklyCartService.formatDate(currentWeekStart.value)
+      const cart = weeklyCartState.carts[weekStart]
+      return cart ? { id: cart.cartId } : null
+    })
+    
+    // Cost state
+    const cartCost = ref(null)
+    const cartCostLoading = ref(false)
+    const cartCostError = ref(null)
     
     // Sorting state (default to combined list)
     const sortByMenu = ref(false)
@@ -334,6 +351,12 @@ export default {
       }, 0)
     })
 
+    const totalCost = computed(() => {
+      return weeklyIngredients.value.reduce((total, ingredient) => {
+        return total + (ingredient.totalCost || 0)
+      }, 0)
+    })
+
     const ingredientCount = computed(() => weeklyIngredients.value.length)
 
     // Methods
@@ -393,6 +416,131 @@ export default {
       return parseFloat(quantity.toFixed(2))
     }
 
+    /**
+     * Build a mapping from atomicOrderId to purchaseOption ID by traversing using associateIDs
+     * Returns: Map<atomicOrderId, { purchaseOptionId, itemId, quantity, units, price }>
+     */
+    const getAtomicOrderMapping = async (cartId) => {
+      const mapping = new Map() // atomicOrderId -> { purchaseOptionId, itemId, quantity, units, price }
+      const processedItems = new Set() // Track items we've already processed
+
+      try {
+        // Get all menus in the week
+        const weekDatesArray = weeklyCartService.getWeekDates(currentWeekStart.value)
+        
+        // Collect all unique ingredient names from all menus
+        const ingredientNames = new Set()
+        
+        for (const date of weekDatesArray) {
+          const dateStr = formatDate(date)
+          const menu = weekMenus.value[dateStr]
+          
+          if (menu) {
+            try {
+              // Get recipes in this menu
+              const recipesResp = await menuCollectionService.getRecipesInMenu(menu.id)
+              if (recipesResp && recipesResp.length > 0 && recipesResp[0].menuRecipes) {
+                const recipeIds = Object.keys(recipesResp[0].menuRecipes)
+                
+                // Get ingredients from each recipe
+                for (const recipeId of recipeIds) {
+                  try {
+                    const ingredientsResp = await cookBookService.getRecipeIngredients(recipeId)
+                    if (ingredientsResp && ingredientsResp.length > 0 && ingredientsResp[0].ingredients) {
+                      const ingredients = ingredientsResp[0].ingredients
+                      
+                      // Collect ingredient names
+                      for (const ingredient of ingredients) {
+                        if (ingredient.name) {
+                          ingredientNames.add(ingredient.name)
+                        }
+                      }
+                    }
+                  } catch (err) {
+                    console.error(`Error getting ingredients for recipe ${recipeId}:`, err)
+                  }
+                }
+              }
+            } catch (err) {
+              console.error(`Error getting recipes for menu ${menu.id}:`, err)
+            }
+          }
+        }
+
+        console.log(`Found ${ingredientNames.size} unique ingredient names`)
+
+        // For each ingredient name, get the item and its purchase options
+        for (const ingredientName of ingredientNames) {
+          try {
+            // Get item by name (may throw if item doesn't exist)
+            const itemResp = await storeCatalogService.getItemByName(ingredientName)
+            if (!itemResp || itemResp.length === 0 || !itemResp[0].item) {
+              // Item doesn't exist in StoreCatalog, skip it
+              console.debug(`Item not found in StoreCatalog: ${ingredientName}`)
+              continue
+            }
+
+            const itemId = itemResp[0].item
+            
+            // Skip if we've already processed this item
+            if (processedItems.has(itemId)) {
+              continue
+            }
+            processedItems.add(itemId)
+
+            // Get all purchase options for this item
+            try {
+              const purchaseOptionsResp = await storeCatalogService.getItemPurchaseOptions(itemId)
+              if (!purchaseOptionsResp || purchaseOptionsResp.length === 0 || !purchaseOptionsResp[0].purchaseOptions) {
+                // No purchase options for this item, skip it
+                console.debug(`No purchase options found for item ${itemId} (${ingredientName})`)
+                continue
+              }
+
+              const purchaseOptionIds = purchaseOptionsResp[0].purchaseOptions
+
+              // For each purchase option, get its AtomicOrder and map the _id
+              for (const purchaseOptionId of purchaseOptionIds) {
+                try {
+                  const atomicOrderResp = await purchaseSystemService.getOrderByAssociateID(purchaseOptionId)
+                  if (atomicOrderResp && atomicOrderResp.length > 0 && atomicOrderResp[0].order) {
+                    const atomicOrder = atomicOrderResp[0].order
+                    const atomicOrderId = atomicOrder._id
+                    
+                    // Map the AtomicOrder _id to its purchaseOption ID and item ID
+                    mapping.set(atomicOrderId, {
+                      purchaseOptionId,
+                      itemId,
+                      quantity: atomicOrder.quantity,
+                      units: atomicOrder.units,
+                      price: atomicOrder.price
+                    })
+                  }
+                } catch (err) {
+                  // Continue to next purchaseOption
+                  console.debug(`Error getting atomic order for purchaseOption ${purchaseOptionId}:`, err)
+                }
+              }
+            } catch (err) {
+              // Error getting purchase options, skip this item
+              console.debug(`Error getting purchase options for item ${itemId}:`, err)
+              continue
+            }
+          } catch (err) {
+            // Item doesn't exist or error getting item, skip it
+            console.debug(`Item not found or error getting item for ingredient ${ingredientName}:`, err.message || err)
+            continue
+          }
+        }
+
+        console.log(`Built mapping for ${mapping.size} atomicOrders`)
+        return mapping
+      } catch (err) {
+        console.error('Error building atomic order mapping:', err)
+        return mapping
+      }
+    }
+
     const loadWeeklyIngredients = async () => {
       isLoadingIngredients.value = true
       weeklyIngredients.value = []
@@ -403,84 +551,184 @@ export default {
           throw new Error('No user logged in')
         }
 
-        const ingredientsMap = new Map()
+        // Get cart ID
+        const cart = currentCart.value
+        if (!cart || !cart.id) {
+          console.log('No cart available for this week')
+          weeklyIngredients.value = []
+          applySorting()
+          return
+        }
 
-        // Get all menus for the current week
-        const weekDatesArray = weeklyCartService.getWeekDates(currentWeekStart.value)
+        // Get the cart's CompositeOrder
+        const cartOrderResponse = await purchaseSystemService.getOrderByAssociateID(cart.id)
+        if (!cartOrderResponse || cartOrderResponse.length === 0 || !cartOrderResponse[0].order) {
+          console.log('No order found for cart:', cart.id)
+          weeklyIngredients.value = []
+          applySorting()
+          return
+        }
+
+        const cartCompositeOrderId = cartOrderResponse[0].order._id
+        console.log('Cart CompositeOrder ID:', cartCompositeOrderId)
+
+        // Get optimal purchase
+        const optimalPurchaseResponse = await purchaseSystemService.getOptimalPurchase(cartCompositeOrderId)
+        if (!optimalPurchaseResponse || optimalPurchaseResponse.length === 0 || !optimalPurchaseResponse[0].optimalPurchase) {
+          console.log('No optimal purchase found for cart')
+          weeklyIngredients.value = []
+          applySorting()
+          return
+        }
+
+        const optimalPurchase = optimalPurchaseResponse[0].optimalPurchase
+        console.log('Cart optimal purchase:', optimalPurchase)
+
+        // Build mapping from atomicOrderId to purchaseOption ID using associateIDs
+        console.log('Building atomic order mapping...')
+        const atomicOrderToPurchaseOptionMap = await getAtomicOrderMapping(cart.id)
+        console.log('Atomic order mapping built:', atomicOrderToPurchaseOptionMap.size, 'entries')
+
+        // Build mapping from atomicOrderId to menu sources
+        // For each menu, get its optimal purchase and map atomicOrderIds to menu info
+        const atomicOrderToMenuMap = new Map() // atomicOrderId -> Array of { menuId, menuName, date, ownerName, quantity, units, quantityInBase, baseUnit }
         
+        const weekDatesArray = weeklyCartService.getWeekDates(currentWeekStart.value)
         for (const date of weekDatesArray) {
           const dateStr = formatDate(date)
           const menu = weekMenus.value[dateStr]
           
           if (menu) {
-            const ownerDisplayName = menu.ownerName || (menu.owner === authState.user?.id ? (authState.user?.username || 'You') : 'Other User')
             try {
-              // Get ingredients for this menu
-              const ingredientsResponse = await menuCollectionService.getRecipesInMenu(menu.id)
-              console.log(`Ingredients for menu ${menu.id} (${dateStr}):`, ingredientsResponse)
-              
-              if (ingredientsResponse[0]?.menuRecipes) {
-                const menuRecipes = ingredientsResponse[0].menuRecipes
-                
-                // For each recipe in the menu, get its ingredients
-                for (const [recipeId, scalingFactor] of Object.entries(menuRecipes)) {
-                  try {
-                    const recipeIngredientsResponse = await cookBookService.getRecipeIngredients(recipeId)
-                    console.log(`Recipe ${recipeId} ingredients:`, recipeIngredientsResponse)
-                    
-                    if (recipeIngredientsResponse[0]?.ingredients) {
-                      const recipeIngredients = recipeIngredientsResponse[0].ingredients
-                      
-                      // Process each ingredient
-                      for (const ingredient of recipeIngredients) {
-                        const scaledQuantity = ingredient.quantity * scalingFactor
-                        const normalized = normalizeToBase(scaledQuantity, ingredient.units)
-                        const key = `${ingredient.name}-${normalized.baseUnit}`
+              // Get menu's CompositeOrder
+              const menuOrderResponse = await purchaseSystemService.getOrderByAssociateID(menu.id)
+              if (!menuOrderResponse || menuOrderResponse.length === 0 || !menuOrderResponse[0].order) {
+                console.log(`No order found for menu ${menu.id}`)
+                continue
+              }
 
-                        if (ingredientsMap.has(key)) {
-                          const existing = ingredientsMap.get(key)
-                          existing.totalBaseQuantity += normalized.quantityInBase
-                          existing.sources.push({
-                            menuId: menu.id,
-                            menuName: menu.name,
-                            ownerName: ownerDisplayName,
-                            date: dateStr,
-                            quantity: normalized.originalQuantity,
-                            units: normalized.originalUnits,
-                            quantityInBase: normalized.quantityInBase,
-                            baseUnit: normalized.baseUnit
-                          })
-                        } else {
-                          ingredientsMap.set(key, {
-                            name: ingredient.name,
-                            baseUnit: normalized.baseUnit,
-                            totalBaseQuantity: normalized.quantityInBase,
-                            sources: [{
-                              menuId: menu.id,
-                              menuName: menu.name,
-                              ownerName: ownerDisplayName,
-                              date: dateStr,
-                              quantity: normalized.originalQuantity,
-                              units: normalized.originalUnits,
-                              quantityInBase: normalized.quantityInBase,
-                              baseUnit: normalized.baseUnit
-                            }]
-                          })
-                        }
-                      }
-                    }
-                  } catch (recipeErr) {
-                    console.error(`Error loading ingredients for recipe ${recipeId}:`, recipeErr)
-                  }
+              const menuCompositeOrderId = menuOrderResponse[0].order._id
+              
+              // Get optimal purchase for this menu
+              const menuOptimalPurchaseResponse = await purchaseSystemService.getOptimalPurchase(menuCompositeOrderId)
+              if (!menuOptimalPurchaseResponse || menuOptimalPurchaseResponse.length === 0 || !menuOptimalPurchaseResponse[0].optimalPurchase) {
+                console.log(`No optimal purchase found for menu ${menu.id}`)
+                continue
+              }
+
+              const menuOptimalPurchase = menuOptimalPurchaseResponse[0].optimalPurchase
+              const ownerDisplayName = menu.ownerName || (menu.owner === authState.user?.id ? (authState.user?.username || 'You') : 'Other User')
+
+              // Map each atomicOrderId in this menu's optimal purchase to menu info
+              for (const [atomicOrderId, quantity] of Object.entries(menuOptimalPurchase)) {
+                if (!atomicOrderToMenuMap.has(atomicOrderId)) {
+                  atomicOrderToMenuMap.set(atomicOrderId, [])
+                }
+                
+                const atomicOrderData = atomicOrderToPurchaseOptionMap.get(atomicOrderId)
+                if (atomicOrderData) {
+                  const quantityToBuy = Number(quantity) || 0
+                  const atomicOrderQuantity = atomicOrderData.quantity || 1
+                  const atomicOrderUnits = atomicOrderData.units || ''
+                  const totalQuantity = quantityToBuy * atomicOrderQuantity
+                  
+                  const normalized = normalizeToBase(totalQuantity, atomicOrderUnits)
+                  
+                  atomicOrderToMenuMap.get(atomicOrderId).push({
+                    menuId: menu.id,
+                    menuName: menu.name,
+                    ownerName: ownerDisplayName,
+                    date: dateStr,
+                    quantity: normalized.originalQuantity,
+                    units: normalized.originalUnits,
+                    quantityInBase: normalized.quantityInBase,
+                    baseUnit: normalized.baseUnit
+                  })
                 }
               }
-            } catch (menuErr) {
-              console.error(`Error loading ingredients for menu ${menu.id}:`, menuErr)
+            } catch (err) {
+              console.error(`Error getting optimal purchase for menu ${menu.id}:`, err)
             }
           }
         }
 
-        // Convert map to array and sort by name
+        console.log('Menu mapping built:', atomicOrderToMenuMap.size, 'atomicOrders mapped to menus')
+
+        const ingredientsMap = new Map() // key: item name + baseUnit + store, value: ingredient data
+
+        // For each atomicOrderId in optimalPurchase
+        for (const [atomicOrderId, quantity] of Object.entries(optimalPurchase)) {
+          try {
+
+            // Get the purchaseOption data for this atomicOrderId
+            const atomicOrderData = atomicOrderToPurchaseOptionMap.get(atomicOrderId)
+            if (!atomicOrderData) {
+              console.warn(`Could not find purchaseOption for atomicOrderId ${atomicOrderId}`)
+              continue
+            }
+
+            // Get purchase option details to get store
+            const purchaseOptionDetailsResp = await storeCatalogService.getPurchaseOptionDetails(atomicOrderData.purchaseOptionId)
+            if (!purchaseOptionDetailsResp || purchaseOptionDetailsResp.length === 0) {
+              console.warn(`Could not get purchase option details for ${atomicOrderData.purchaseOptionId}`)
+              continue
+            }
+
+            const purchaseOptionDetails = purchaseOptionDetailsResp[0]
+            const store = purchaseOptionDetails.store || 'Unknown Store'
+
+            // Get item name
+            const itemNameResp = await storeCatalogService.getItemName(atomicOrderData.itemId)
+            const itemName = itemNameResp && itemNameResp.length > 0 ? itemNameResp[0].name : 'Unknown Item'
+
+            // Get quantity from optimal purchase (this is the number of units to buy)
+            const quantityToBuy = Number(quantity) || 0
+            const atomicOrderQuantity = atomicOrderData.quantity || 1
+            const atomicOrderUnits = atomicOrderData.units || purchaseOptionDetails.units || ''
+
+            // Calculate total quantity needed
+            const totalQuantity = quantityToBuy * atomicOrderQuantity
+
+            // Normalize quantity
+            const normalized = normalizeToBase(totalQuantity, atomicOrderUnits)
+            const key = `${itemName}-${normalized.baseUnit}-${store}`
+
+            // Get menu sources for this atomicOrderId and add store information to each source
+            const menuSources = atomicOrderToMenuMap.get(atomicOrderId) || []
+            // Add store to each source since we now have it
+            const menuSourcesWithStore = menuSources.map(source => ({
+              ...source,
+              store: store
+            }))
+
+            // Calculate cost: quantityToBuy * price per unit
+            const price = atomicOrderData.price || 0
+            const cost = quantityToBuy * price
+
+            if (ingredientsMap.has(key)) {
+              const existing = ingredientsMap.get(key)
+              existing.totalBaseQuantity += normalized.quantityInBase
+              existing.totalCost = (existing.totalCost || 0) + cost
+              // Merge menu sources with store information
+              existing.sources.push(...menuSourcesWithStore)
+            } else {
+              ingredientsMap.set(key, {
+                name: itemName,
+                baseUnit: normalized.baseUnit,
+                totalBaseQuantity: normalized.quantityInBase,
+                totalCost: cost,
+                store: store,
+                purchaseOptionId: atomicOrderData.purchaseOptionId,
+                itemId: atomicOrderData.itemId,
+                sources: [...menuSourcesWithStore] // Store menu sources with store information
+              })
+            }
+          } catch (err) {
+            console.error(`Error processing atomicOrderId ${atomicOrderId}:`, err)
+          }
+        }
+
+        // Convert map to array and format
         weeklyIngredients.value = Array.from(ingredientsMap.values())
           .map((entry) => {
             const { quantity: displayQuantity, units: displayUnits } = formatQuantityFromBase(entry.totalBaseQuantity, entry.baseUnit)
@@ -490,19 +738,23 @@ export default {
               totalQuantity: displayQuantity,
               baseUnit: entry.baseUnit,
               totalBaseQuantity: entry.totalBaseQuantity,
-              sources: entry.sources
+              totalCost: entry.totalCost || 0,
+              store: entry.store,
+              purchaseOptionId: entry.purchaseOptionId,
+              itemId: entry.itemId,
+              sources: entry.sources // Populated with menu information from optimal purchase, including store
             }
           })
           .sort((a, b) => a.name.localeCompare(b.name))
 
-        console.log('Weekly ingredients loaded:', weeklyIngredients.value)
+        console.log('Weekly ingredients loaded from optimal purchase:', weeklyIngredients.value)
         
         // Apply initial sorting
         applySorting()
 
       } catch (err) {
+        // Error loading ingredients - this is separate from cart errors
         console.error('Error loading weekly ingredients:', err)
-        error.value = err.message || 'Failed to load weekly ingredients'
       } finally {
         isLoadingIngredients.value = false
       }
@@ -520,25 +772,80 @@ export default {
       return fullDayNames[idx] || 'Unknown Day'
     }
 
+    const handleMenuSortChange = () => {
+      if (sortByMenu.value && sortByStore.value) {
+        // If menu is checked and store was also checked, uncheck store
+        sortByStore.value = false
+      }
+      applySorting()
+    }
+
+    const handleStoreSortChange = () => {
+      if (sortByStore.value && sortByMenu.value) {
+        // If store is checked and menu was also checked, uncheck menu
+        sortByMenu.value = false
+      }
+      applySorting()
+    }
+
     const applySorting = () => {
       if (weeklyIngredients.value.length === 0) {
         sortedIngredients.value = []
         return
       }
       
-      if (sortByStore.value) {
-        // TODO: Implement By Store sorting when PurchaseSystem integration is complete
-        // This requires:
-        // 1. Linking ingredients in recipes to StoreCatalog items
-        // 2. Fetching purchase options for each item to determine which store they should come from
-        // 3. Grouping ingredients by store
-        // 4. Displaying ingredients organized by store for optimized shopping trips
-        
-        // For now, just show aggregated view with TODO comment
+      // Neither enabled: Show default aggregated view
+      if (!sortByStore.value && !sortByMenu.value) {
         sortedIngredients.value = weeklyIngredients.value
-        console.log('By Store sorting not yet implemented - requires PurchaseSystem integration')
+        return
+      }
+      
+      // Note: Both cannot be enabled at the same time due to mutual exclusivity
+      // If both are somehow enabled, prioritize menu sorting
+      if (sortByStore.value && sortByMenu.value) {
+        sortByStore.value = false
+      }
+      
+      if (sortByStore.value) {
+        // Only store sorting: group ingredients by store
+        const storeSections = new Map()
+
+        for (const ingredient of weeklyIngredients.value) {
+          const store = ingredient.store || 'Unknown Store'
+
+          if (!storeSections.has(store)) {
+            storeSections.set(store, {
+              storeName: store,
+              ingredients: []
+            })
+          }
+
+          const section = storeSections.get(store)
+          section.ingredients.push(ingredient)
+        }
+
+        // Flatten into sorted array by store name, then by ingredient name
+        sortedIngredients.value = []
+        Array.from(storeSections.values())
+          .sort((a, b) => a.storeName.localeCompare(b.storeName))
+          .forEach((section) => {
+            // Add store header
+            sortedIngredients.value.push({
+              name: section.storeName,
+              units: '',
+              totalQuantity: 0,
+              totalCost: 0,
+              sources: [],
+              isStoreHeader: true
+            })
+
+            // Add ingredients for this store, sorted by name
+            section.ingredients
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .forEach((ing) => sortedIngredients.value.push(ing))
+          })
       } else if (sortByMenu.value) {
-        // Sort by menu: group ingredients by which menu they come from
+        // Only menu sorting: group ingredients by which menu they come from
         const menuSections = new Map()
 
         for (const ingredient of weeklyIngredients.value) {
@@ -550,12 +857,14 @@ export default {
             if (!menuSections.has(sectionKey)) {
               const menuMeta = weekMenus.value[source.date]
               const ownerName = source.ownerName || menuMeta?.ownerName || (menuMeta?.owner === authState.user?.id ? (authState.user?.username || 'You') : 'Other User')
+              const menuCost = menuMeta?.cost ?? null
 
               menuSections.set(sectionKey, {
                 menuId: source.menuId,
                 date: source.date,
                 menuName: source.menuName,
                 ownerName,
+                menuCost,
                 ingredients: []
               })
             }
@@ -565,13 +874,15 @@ export default {
               name: ingredient.name,
               units: source.units || ingredient.units,
               totalQuantity: source.quantity,
+              totalCost: ingredient.totalCost || 0,
               sources: [{
                 menuId: section.menuId,
                 menuName: section.menuName,
                 ownerName: section.ownerName,
                 date: section.date,
                 quantity: source.quantity,
-                units: source.units || ingredient.units
+                units: source.units || ingredient.units,
+                store: source.store || ingredient.store
               }]
             })
           }
@@ -583,11 +894,14 @@ export default {
           .sort((a, b) => a.date.localeCompare(b.date))
           .forEach((section) => {
             const dayName = getFullDayName(section.date)
+            const dateStr = section.date
             const ownerLabel = section.ownerName || 'Unknown User'
+            const costStr = section.menuCost !== null && section.menuCost !== undefined ? formatCost(section.menuCost) : 'N/A'
             sortedIngredients.value.push({
-              name: `${dayName} - ${ownerLabel} - ${section.menuName}`,
+              name: `${dayName} - ${dateStr} - ${section.menuName} - ${ownerLabel} - ${costStr}`,
               units: '',
               totalQuantity: 0,
+              totalCost: 0,
               sources: [],
               isMenuHeader: true
             })
@@ -596,91 +910,78 @@ export default {
               .sort((a, b) => a.name.localeCompare(b.name))
               .forEach((ing) => sortedIngredients.value.push(ing))
           })
-      } else {
-        // Default: aggregated view (all ingredients combined)
-        sortedIngredients.value = weeklyIngredients.value
       }
     }
 
-    const loadWeekData = async () => {
-      isLoading.value = true
-      error.value = null
-
+    const loadCartCost = async () => {
+      const cart = currentCart.value
+      if (!cart || !cart.id) {
+        cartCost.value = null
+        return
+      }
+      
+      cartCostLoading.value = true
+      cartCostError.value = null
+      
       try {
-        // Clear existing menus
-        weekMenus.value = {}
-        
+        const cost = await fetchCartCost(cart.id)
+        cartCost.value = cost
+      } catch (err) {
+        console.error('Error loading cart cost:', err)
+        cartCostError.value = err.message || 'Failed to load cart cost'
+        cartCost.value = null
+      } finally {
+        cartCostLoading.value = false
+      }
+    }
+    
+    const loadWeekData = async () => {
+      try {
         // Get current user
         const currentUser = authState.user
         if (!currentUser) {
           throw new Error('No user logged in')
         }
 
-        // Get cart for current week
+        // Use store to get week menu mapping (uses cache if available)
         const weekStartStr = formatDate(currentWeekStart.value)
-        console.log('Loading cart for week starting:', weekStartStr)
-        const cartResponse = await weeklyCartService.getCartByDate(weekStartStr)
-        console.log('Cart response:', cartResponse)
+        console.log('[WeeklyCartPage] Loading week data for week starting:', weekStartStr)
         
-        if (cartResponse[0]?.cart) {
-          currentCart.value = { id: cartResponse[0].cart }
-          console.log('Found cart:', currentCart.value.id)
+        // Get cached mapping or build it if needed
+        const weekMenuMapping = await weeklyCartStore.getWeekMenuMapping(currentWeekStart.value)
+        
+        // Update local state with cached mapping
+        weekMenus.value = { ...weekMenuMapping }
+        console.log('[WeeklyCartPage] Week menus loaded from store:', weekMenus.value)
 
-          // Get menus in cart (as a set for quick membership checks)
-          const menusResponse = await weeklyCartService.getMenusInCart(currentCart.value.id)
-          console.log('Menus in cart response:', menusResponse)
-
-          const cartMenuIds = new Set(menusResponse[0]?.menus || [])
-          console.log('Cart menu IDs:', Array.from(cartMenuIds))
-
-          // For each date of the week, check if a menu exists and if it's in the cart
-          const weekDatesArray = weeklyCartService.getWeekDates(currentWeekStart.value)
-          for (const date of weekDatesArray) {
-            const dateStr = formatDate(date)
+        // Fetch menu costs for each menu
+        const weekDatesArray = weeklyCartService.getWeekDates(currentWeekStart.value)
+        for (const date of weekDatesArray) {
+          const dateStr = formatDate(date)
+          const menu = weekMenus.value[dateStr]
+          if (menu && menu.id) {
             try {
-              const byDateResp = await menuCollectionService.getMenuByDate(dateStr)
-              const menuIdForDate = byDateResp[0]?.menu
-              if (menuIdForDate && cartMenuIds.has(menuIdForDate)) {
-                // Fetch details and map to this exact date column
-                const menuDetails = await menuCollectionService.getMenuDetails(menuIdForDate)
-                if (menuDetails[0]) {
-                  const menu = menuDetails[0]
-                  const extras = await fetchMenuExtras(menuIdForDate, menu.owner)
-                  weekMenus.value[dateStr] = {
-                    id: menuIdForDate,
-                    name: menu.name,
-                    date: menu.date,
-                    owner: menu.owner,
-                    ownerName: extras.ownerName,
-                    recipeNames: extras.recipeNames
-                  }
-                  console.log(`Placed cart menu ${menuIdForDate} on ${dateStr}`)
-                }
-              } else {
-                // Ensure empty dates show no menu explicitly
-                if (!weekMenus.value[dateStr]) {
-                  // leave as empty; UI shows placeholder
-                }
+              const menuCost = await fetchMenuCost(menu.id)
+              if (menuCost !== null) {
+                weekMenus.value[dateStr] = { ...menu, cost: menuCost }
               }
-            } catch (e) {
-              console.log(`No menu for ${dateStr} or error occurred:`, e.message)
+            } catch (err) {
+              console.error(`Error fetching cost for menu ${menu.id}:`, err)
             }
           }
-        } else {
-          console.log('No cart found for this week')
-          currentCart.value = null
         }
 
         // Load weekly ingredients after menus are loaded
         await loadWeeklyIngredients()
         
-        console.log('Final weekMenus:', weekMenus.value)
+        // Load cart cost after cart is loaded
+        await loadCartCost()
+        
+        console.log('[WeeklyCartPage] Final weekMenus:', weekMenus.value)
 
       } catch (err) {
-        console.error('Error loading week data:', err)
-        error.value = err.message || 'Failed to load week data'
-      } finally {
-        isLoading.value = false
+        console.error('[WeeklyCartPage] Error loading week data:', err)
+        // Error is handled by store
       }
     }
 
@@ -688,22 +989,26 @@ export default {
       const newWeekStart = new Date(currentWeekStart.value)
       newWeekStart.setUTCDate(newWeekStart.getUTCDate() - 7)
       currentWeekStart.value = newWeekStart
+      // Watcher will handle loadWeekData()
     }
 
     const goToNextWeek = () => {
       const newWeekStart = new Date(currentWeekStart.value)
       newWeekStart.setUTCDate(newWeekStart.getUTCDate() + 7)
       currentWeekStart.value = newWeekStart
+      // Watcher will handle loadWeekData()
     }
 
     const goToCurrentWeek = () => {
       currentWeekStart.value = weeklyCartService.getWeekStart(new Date())
+      // Watcher will handle loadWeekData()
     }
 
     const goToSelectedDate = () => {
       if (!goToDateValue.value) return
       const selected = new Date(goToDateValue.value)
       currentWeekStart.value = weeklyCartService.getWeekStart(selected)
+      // Watcher will handle loadWeekData()
     }
 
 
@@ -715,7 +1020,10 @@ export default {
     const confirmAddMenu = async () => {
       if (!selectedDate.value) return
 
-      isLoading.value = true
+      isAddingMenu.value = true
+      const weekStart = weeklyCartService.formatDate(currentWeekStart.value)
+      weeklyCartStore.clearError(weekStart)
+      
       try {
         // Get current user
         const currentUser = authState.user
@@ -733,48 +1041,33 @@ export default {
           const menuId = menuResponse.menu
           console.log(`Created menu ${menuId} for date ${dateStr}`)
           
-          // Add menu to cart (this will automatically create a cart if one doesn't exist)
-          try {
-            console.log(`Adding menu ${menuId} to WeeklyCart for date ${dateStr}`)
-            const addToCartResponse = await weeklyCartService.addMenuToCart(menuId, dateStr)
-            console.log(`Add to cart response:`, addToCartResponse)
-            
-            if (addToCartResponse.cart) {
-              console.log(`Menu added to cart ${addToCartResponse.cart}`)
-            }
-          } catch (addErr) {
-            console.error(`Error adding menu to cart:`, addErr)
-            throw new Error(`Failed to add menu to cart: ${addErr.message}`)
-          }
+          // Menu is automatically added to weekly cart when created (backend synchronization)
+          // Cart is automatically created if one doesn't exist for this week
+          // Invalidate cache so UI reflects the new menu
+          weeklyCartStore.clearWeekMenuMapping(dateStr)
           
-          // Update local state with owner name and recipe names
-          const extras = await fetchMenuExtras(menuId, currentUser.id)
-          weekMenus.value[dateStr] = {
-            id: menuId,
-            name: menuName,
-            date: dateStr,
-            owner: currentUser.id,
-            ownerName: extras.ownerName,
-            recipeNames: extras.recipeNames
-          }
-
           closeAddMenuModal()
-          await loadWeekData() // Refresh data
+          // Refresh data - store will rebuild mapping with new menu
+          await loadWeekData()
+          // Refresh cart cost after adding menu
+          await loadCartCost()
         } else {
           throw new Error('Failed to create menu')
         }
       } catch (err) {
         console.error('Error adding menu:', err)
-        error.value = err.message || 'Failed to add menu'
+        weeklyCartStore.setError(weekStart, err.message || 'Failed to add menu')
       } finally {
-        isLoading.value = false
+        isAddingMenu.value = false
       }
     }
 
     const removeMenuFromCart = (menu) => {
       // Check if the current user owns this menu
       if (menu.owner !== authState.user?.id) {
-        error.value = 'You can only remove menus that you created'
+        // Use store's error handling
+        const weekStart = weeklyCartService.formatDate(currentWeekStart.value)
+        weeklyCartStore.setError(weekStart, 'You can only remove menus that you created')
         return
       }
 
@@ -784,12 +1077,14 @@ export default {
         confirmText: 'Remove',
         action: async () => {
           try {
-            await weeklyCartService.removeMenuFromCart(menu.id)
-            delete weekMenus.value[menu.date]
-            await loadWeekData() // Refresh data
+            await weeklyCartStore.removeMenuFromCart(menu.id)
+            // Refresh data - store will rebuild mapping without this menu
+            await loadWeekData()
+            // Refresh cart cost after removing menu
+            await loadCartCost()
           } catch (err) {
             console.error('Error removing menu:', err)
-            error.value = err.message || 'Failed to remove menu'
+            // Error is handled by store
           }
         }
       }
@@ -806,8 +1101,7 @@ export default {
       if (menu?.id) {
         emit('view-menu', menu.id)
       } else {
-        console.error('Cannot view menu - no ID found in menu object:', menu)
-        error.value = 'Cannot view menu - invalid menu data'
+        console.error('Cannot view menu - invalid menu data:', menu)
       }
     }
 
@@ -853,6 +1147,10 @@ export default {
       weeklyIngredients,
       sortedIngredients,
       isLoadingIngredients,
+      isAddingMenu,
+      cartCost,
+      cartCostLoading,
+      cartCostError,
       showAddMenuModal,
       showConfirmModal,
       selectedDate,
@@ -864,6 +1162,7 @@ export default {
       dayNames,
       weekDates,
       totalQuantity,
+      totalCost,
       ingredientCount,
       
       // Methods
@@ -871,8 +1170,11 @@ export default {
       formatWeekRange,
       getMenuForDate,
       formatQuantity,
+      formatCost,
       loadWeeklyIngredients,
       applySorting,
+      handleMenuSortChange,
+      handleStoreSortChange,
       loadWeekData,
       goToPreviousWeek,
       goToNextWeek,
@@ -1456,15 +1758,37 @@ export default {
   text-decoration: line-through;
 }
 
-.menu-header {
-  background: linear-gradient(135deg, #e0e0e0 0%, #f0f0f0 100%);
-  border: 2px solid var(--secondary-color);
+.ingredient-item.menu-header, .ingredient-item.store-header {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  border-bottom: 3px solid var(--primary-color) !important;
+  grid-column: 1 / -1;
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  padding: 1rem 0 0.75rem 0 !important;
+  transition: none !important;
+  box-shadow: none !important;
 }
 
-.menu-header h4 {
+.ingredient-item.menu-header:first-child, .ingredient-item.store-header:first-child {
+  margin-top: 0;
+}
+
+.ingredient-item.menu-header h4, .ingredient-item.store-header h4 {
   color: var(--primary-color);
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: 1.4rem;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+
+.ingredient-item.store-header {
+  border-bottom-color: var(--secondary-color) !important;
+}
+
+.ingredient-item.store-header h4 {
+  color: var(--secondary-color);
 }
 
 .loading-ingredients {
@@ -1509,31 +1833,42 @@ export default {
 
 .ingredients-grid {
   display: grid;
-  gap: 1.5rem;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
 }
 
 .ingredient-item {
   background: #f8f9fa;
   border: 1px solid #e9ecef;
   border-radius: 8px;
-  padding: 1.5rem;
+  padding: 1rem;
   transition: all 0.3s ease;
 }
 
-.ingredient-item:hover {
+.ingredient-item:hover:not(.menu-header):not(.store-header) {
   border-color: var(--primary-color);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .ingredient-info {
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
 }
 
 .ingredient-info h4 {
   margin: 0 0 0.5rem 0;
   color: var(--primary-color);
-  font-size: 1.2rem;
+  font-size: 1rem;
   font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.ingredient-cost {
+  color: var(--secondary-color);
+  font-weight: 700;
+  font-size: 0.9rem;
 }
 
 .ingredient-details {
@@ -1565,6 +1900,13 @@ export default {
   font-style: italic;
 }
 
+.store-info {
+  color: var(--primary-color);
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin-left: 0.5rem;
+}
+
 .ingredient-sources {
   display: flex;
   flex-direction: column;
@@ -1572,41 +1914,57 @@ export default {
 }
 
 .source-item {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1.5fr;
   align-items: center;
   background: white;
   padding: 0.5rem 0.75rem;
   border-radius: 6px;
   border: 1px solid #e9ecef;
   font-size: 0.9rem;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 0.75rem;
+  margin-left: 0.5rem;
+  transition: background-color 0.2s ease;
+}
+
+.source-item:hover {
+  background-color: #f8f9fa;
 }
 
 .source-menu {
   color: var(--primary-color);
   font-weight: 500;
-  flex: 1;
-  min-width: 120px;
+  font-size: 0.75rem;
 }
 
 .source-date {
   color: var(--secondary-color);
-  font-size: 0.8rem;
-  min-width: 80px;
+  font-size: 0.75rem;
 }
 
 .source-quantity {
   color: #6c757d;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   font-weight: 500;
-  min-width: 80px;
-  text-align: right;
+}
+
+.source-store {
+  color: var(--primary-color);
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
 /* Responsive Design */
+@media (max-width: 1024px) {
+  .ingredients-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 @media (max-width: 768px) {
+  .ingredients-grid {
+    grid-template-columns: 1fr;
+  }
   .weekly-cart-page {
     padding: 1rem;
   }
@@ -1653,13 +2011,15 @@ export default {
   }
 
   .source-item {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.25rem;
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
   }
 
-  .source-quantity {
-    text-align: left;
+  .source-menu,
+  .source-date,
+  .source-quantity,
+  .source-store {
+    width: 100%;
   }
 }
 

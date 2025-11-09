@@ -50,23 +50,9 @@
         class="item-card"
       >
         <div class="item-header">
-          <h3 class="item-primary-name">{{ item.primaryName }}</h3>
+          <h3 class="item-primary-name">{{ item.name }}</h3>
           <div class="item-actions">
             <button @click="editItem(item)" class="edit-btn">Edit</button>
-          </div>
-        </div>
-
-        <!-- Alternative Names -->
-        <div v-if="item.names.length > 1" class="item-names">
-          <h4>Alternative Names:</h4>
-          <div class="names-list">
-            <span
-              v-for="name in item.names.filter(name => name !== item.primaryName)"
-              :key="name"
-              class="name-tag"
-            >
-              {{ name }}
-            </span>
           </div>
         </div>
 
@@ -239,7 +225,7 @@
     <div v-if="showEditItemModal" class="modal-overlay" @click="closeEditItemModal">
       <div class="modal-content large-modal" @click.stop>
         <div class="modal-header">
-          <h2>Edit Item: {{ editingItem?.primaryName }}</h2>
+          <h2>Edit Item: {{ editingItem?.name }}</h2>
           <div class="modal-header-actions">
             <button @click="deleteItem(editingItem)" class="delete-btn">Delete Item</button>
             <button @click="closeEditItemModal" class="close-button">&times;</button>
@@ -247,42 +233,6 @@
         </div>
         
         <div class="edit-item-content">
-          <!-- Alternative Names Section -->
-          <div class="edit-section">
-            <h3>Alternative Names</h3>
-            <div class="names-management">
-              <div class="add-name-form">
-                <input
-                  v-model="newName"
-                  type="text"
-                  placeholder="Add alternative name"
-                  class="form-input"
-                />
-                <button @click="addAlternativeName" class="add-name-btn" :disabled="!newName.trim()">
-                  Add Name
-                </button>
-              </div>
-              <div class="names-list">
-                <div
-                  v-for="name in editingItem?.names || []"
-                  :key="name"
-                  class="name-item"
-                >
-                  <span class="name-text">
-                    {{ name }}
-                  </span>
-                  <button
-                    v-if="name !== editingItem?.primaryName"
-                    @click="removeAlternativeName(name)"
-                    class="remove-name-btn"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <!-- Purchase Options Section -->
           <div class="edit-section">
             <h3>Purchase Options</h3>
@@ -542,7 +492,7 @@
         </div>
         
         <div class="delete-confirmation">
-          <p>Are you sure you want to delete <strong>{{ itemToDelete?.primaryName }}</strong>?</p>
+          <p>Are you sure you want to delete <strong>{{ itemToDelete?.name }}</strong>?</p>
           <p class="warning-text">This will also delete all associated purchase options and cannot be undone.</p>
           
           <div class="confirmation-actions">
@@ -559,19 +509,20 @@
 </template>
 
 <script>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { storeCatalogService } from '../services/storeCatalogService.js'
 import { SUPPORTED_STORES, SUPPORTED_UNITS } from '../constants/storeCatalogConstants.js'
+import { catalogStore, catalogState } from '../stores/catalogStore.js'
 
 export default {
   name: 'StoreCatalogPage',
   setup() {
-    // State
-    const loading = ref(false)
-    const errorMessage = ref('')
+    // Use catalog store for items, loading, and error
+    const loading = computed(() => catalogState.loading)
+    const errorMessage = computed(() => catalogState.error || '')
     const successMessage = ref('')
     const searchQuery = ref('')
-    const items = ref([])
+    const items = computed(() => catalogState.items)
     const filteredItems = ref([])
     
     // Pagination state
@@ -624,22 +575,25 @@ export default {
     const isConfirming = (purchaseOptionId) => confirmingOptionIds.has(purchaseOptionId)
 
     const mutatePurchaseOption = (itemId, optionId, mutator) => {
-      const applyMutation = (purchaseOptions = []) => {
-        const target = purchaseOptions.find(po => po.id === optionId)
+      const catalogItem = catalogStore.findItem(itemId)
+      if (catalogItem) {
+        const target = catalogItem.purchaseOptions.find(po => po.id === optionId)
+        if (target) {
+          // Mutate directly - since catalogItem is from the store, this updates the store cache automatically
+          mutator(target)
+        }
+      }
+
+      // Only update editingItem if it's a different object reference
+      // If it's the same reference, it's already updated above
+      if (editingItem.value?.id === itemId && editingItem.value !== catalogItem) {
+        const target = editingItem.value.purchaseOptions.find(po => po.id === optionId)
         if (target) {
           mutator(target)
         }
       }
 
-      const catalogItem = items.value.find(item => item.id === itemId)
-      if (catalogItem) {
-        applyMutation(catalogItem.purchaseOptions)
-      }
-
-      if (editingItem.value?.id === itemId) {
-        applyMutation(editingItem.value.purchaseOptions)
-      }
-
+      // Update editingPurchaseOption if it's the option being edited
       if (editingPurchaseOption.value?.id === optionId) {
         mutator(editingPurchaseOption.value)
       }
@@ -648,37 +602,29 @@ export default {
     }
 
     const addPurchaseOptionLocally = (itemId, option) => {
-      const inject = (collection = []) => {
-        collection.unshift(option)
-      }
-
-      const catalogItem = items.value.find(item => item.id === itemId)
-      if (catalogItem) {
-        inject(catalogItem.purchaseOptions)
-      }
-
-      if (editingItem.value?.id === itemId) {
-        inject(editingItem.value.purchaseOptions)
+      // Add to store cache
+      catalogStore.addPurchaseOption(itemId, option)
+      
+      // Update editingItem if it's a different object reference
+      const catalogItem = catalogStore.findItem(itemId)
+      if (editingItem.value?.id === itemId && editingItem.value !== catalogItem) {
+        editingItem.value.purchaseOptions.unshift(option)
       }
 
       filterItems()
     }
 
     const removePurchaseOptionLocally = (itemId, optionId) => {
-      const strip = (collection = []) => {
-        const index = collection.findIndex(po => po.id === optionId)
+      // Remove from store cache
+      catalogStore.removePurchaseOption(itemId, optionId)
+      
+      // Update editingItem if it's a different object reference
+      const catalogItem = catalogStore.findItem(itemId)
+      if (editingItem.value?.id === itemId && editingItem.value !== catalogItem) {
+        const index = editingItem.value.purchaseOptions.findIndex(po => po.id === optionId)
         if (index !== -1) {
-          collection.splice(index, 1)
+          editingItem.value.purchaseOptions.splice(index, 1)
         }
-      }
-
-      const catalogItem = items.value.find(item => item.id === itemId)
-      if (catalogItem) {
-        strip(catalogItem.purchaseOptions)
-      }
-
-      if (editingItem.value?.id === itemId) {
-        strip(editingItem.value.purchaseOptions)
       }
 
       if (editingPurchaseOption.value?.id === optionId) {
@@ -692,7 +638,6 @@ export default {
     const editingItem = ref(null)
     const editingPurchaseOption = ref(null)
     const itemToDelete = ref(null)
-    const newName = ref('')
 
     // Computed properties
     const isAddPurchaseOptionFormValid = computed(() => {
@@ -736,7 +681,7 @@ export default {
 
     // Methods
     const clearError = () => {
-      errorMessage.value = ''
+      catalogStore.clearError()
     }
 
     const clearSuccess = () => {
@@ -781,92 +726,12 @@ export default {
       } else {
         const query = searchQuery.value.toLowerCase()
         filteredItems.value = items.value.filter(item => {
-          return item.primaryName.toLowerCase().includes(query) ||
-                 item.names.some(name => name.toLowerCase().includes(query))
+          return item.name.toLowerCase().includes(query)
         })
       }
       
       // Reset to first page when filtering
       currentPage.value = 1
-    }
-
-    const loadItems = async () => {
-      console.log('[StoreCatalog] loadItems:start')
-      loading.value = true
-      clearError()
-
-      try {
-        const response = await storeCatalogService.getAllItems()
-        console.log('[StoreCatalog] getAllItems response:', response)
-        const root = Array.isArray(response) ? response[0] : response
-        const itemIds = root?.items || []
-        console.log('[StoreCatalog] itemIds:', itemIds)
-
-        // Load detailed information for each item
-        const itemsWithDetails = await Promise.all(
-          itemIds.map(async (itemId) => {
-            try {
-              console.log(`[StoreCatalog] loading item ${itemId}`)
-              const [namesResponse, purchaseOptionsResponse] = await Promise.all([
-                storeCatalogService.getItemNames(itemId),
-                storeCatalogService.getItemPurchaseOptions(itemId)
-              ])
-              console.log(`[StoreCatalog] item ${itemId} namesResponse:`, namesResponse)
-              console.log(`[StoreCatalog] item ${itemId} purchaseOptionsResponse:`, purchaseOptionsResponse)
-
-              const namesRoot = Array.isArray(namesResponse) ? namesResponse[0] : namesResponse
-              const poRoot = Array.isArray(purchaseOptionsResponse) ? purchaseOptionsResponse[0] : purchaseOptionsResponse
-              const names = namesRoot?.names || []
-              const purchaseOptionIds = poRoot?.purchaseOptions || []
-              console.log(`[StoreCatalog] item ${itemId} names:`, names)
-              console.log(`[StoreCatalog] item ${itemId} purchaseOptionIds:`, purchaseOptionIds)
-
-              // Load purchase option details
-              const purchaseOptions = await Promise.all(
-                purchaseOptionIds.map(async (optionId) => {
-                  try {
-                    console.log(`  [StoreCatalog] loading purchase option ${optionId}`)
-                    const detailsResponse = await storeCatalogService.getPurchaseOptionDetails(optionId)
-                    const rawDetails = Array.isArray(detailsResponse) ? detailsResponse[0] : detailsResponse
-                    const detailsRoot = rawDetails && typeof rawDetails === 'object' ? rawDetails : {}
-                    const priceNum = Number(detailsRoot?.price ?? 0)
-                    console.log(`  [StoreCatalog] purchase option ${optionId} details:`, detailsRoot)
-                    return {
-                      id: optionId,
-                      ...detailsRoot,
-                      price: isNaN(priceNum) ? 0 : priceNum
-                    }
-                  } catch (error) {
-                    console.error(`Error loading purchase option ${optionId}:`, error)
-                    return null
-                  }
-                })
-              )
-
-              return {
-                id: itemId,
-                primaryName: names[0] || 'Unknown',
-                names: names,
-                purchaseOptions: purchaseOptions.filter(option => option !== null)
-              }
-            } catch (error) {
-              console.error(`Error loading item ${itemId}:`, error)
-              return null
-            }
-          })
-        )
-        console.log('[StoreCatalog] itemsWithDetails:', itemsWithDetails)
-
-        items.value = itemsWithDetails.filter(item => item !== null)
-        filteredItems.value = items.value
-        console.log('[StoreCatalog] items set:', items.value)
-      } catch (error) {
-        console.error('Error loading items:', error)
-        errorMessage.value = error.message || 'Failed to load items'
-      } finally {
-        console.log('[StoreCatalog] loadItems:finish')
-        loading.value = false
-      }
     }
 
     const handleAddItem = async () => {
@@ -877,15 +742,14 @@ export default {
         const response = await storeCatalogService.createItem(newItemForm.primaryName.trim())
         
         if (response.item) {
-          // Add the new item to the local items array instead of reloading everything
+          // Add the new item to the store cache
           const newItem = {
             id: response.item,
-            primaryName: newItemForm.primaryName.trim(),
-            names: [newItemForm.primaryName.trim()],
+            name: newItemForm.primaryName.trim(),
             purchaseOptions: []
           }
           
-          items.value.unshift(newItem) // Add to beginning of array
+          catalogStore.addItem(newItem)
           filterItems() // Update filtered items and reset pagination
           
           successMessage.value = 'Item added successfully!'
@@ -959,8 +823,20 @@ export default {
           storeCatalogService.updatePurchaseOptionStore(editingPurchaseOption.value.id, editingPurchaseOptionForm.store.trim())
         ])
         
+        // Determine the item ID - use editingItem if available, otherwise find it from the purchase option
+        let itemId
+        if (editingItem.value) {
+          itemId = editingItem.value.id
+        } else {
+          const item = catalogStore.findItemByPurchaseOption(editingPurchaseOption.value.id)
+          if (!item) {
+            throw new Error('Could not find the item associated with this purchase option')
+          }
+          itemId = item.id
+        }
+        
         mutatePurchaseOption(
-          editingItem.value.id,
+          itemId,
           editingPurchaseOption.value.id,
           (option) => {
             option.quantity = editingPurchaseOptionForm.quantity
@@ -987,42 +863,20 @@ export default {
         const response = await storeCatalogService.deleteItem(itemToDelete.value.id)
         
         if (response.success) {
+          // Remove from store cache
+          catalogStore.removeItem(itemToDelete.value.id)
+          filterItems() // Update filtered items
+          
           successMessage.value = 'Item deleted successfully!'
           closeDeleteModal()
-          await loadItems()
         } else {
           throw new Error('Invalid response from server')
         }
       } catch (error) {
         console.error('Delete item error:', error)
-        errorMessage.value = error.message || 'Failed to delete item'
+        catalogStore.setError(error.message || 'Failed to delete item')
       } finally {
         deleteItemLoading.value = false
-      }
-    }
-
-    const addAlternativeName = async () => {
-      if (!newName.value.trim()) return
-
-      try {
-        await storeCatalogService.addItemName(editingItem.value.id, newName.value.trim())
-        successMessage.value = 'Alternative name added successfully!'
-        newName.value = ''
-        await loadItems()
-      } catch (error) {
-        console.error('Add alternative name error:', error)
-        errorMessage.value = error.message || 'Failed to add alternative name'
-      }
-    }
-
-    const removeAlternativeName = async (name) => {
-      try {
-        await storeCatalogService.removeItemName(editingItem.value.id, name)
-        successMessage.value = 'Alternative name removed successfully!'
-        await loadItems()
-      } catch (error) {
-        console.error('Remove alternative name error:', error)
-        errorMessage.value = error.message || 'Failed to remove alternative name'
       }
     }
 
@@ -1031,14 +885,13 @@ export default {
         confirmingOptionIds.add(purchaseOptionId)
         await storeCatalogService.confirmPurchaseOption(purchaseOptionId)
 
-        // Update only the targeted option locally
-        for (const catalogItem of items.value) {
-          const opt = catalogItem.purchaseOptions?.find(po => po.id === purchaseOptionId)
-          if (opt) {
-            opt.confirmed = true
-            break
-          }
+        // Find the item that contains this purchase option and update it in the store
+        const item = catalogStore.findItemByPurchaseOption(purchaseOptionId)
+        if (item) {
+          catalogStore.updatePurchaseOption(item.id, purchaseOptionId, { confirmed: true })
         }
+        
+        // Update editingItem if it's open
         if (editingItem.value) {
           const opt = editingItem.value.purchaseOptions?.find(po => po.id === purchaseOptionId)
           if (opt) opt.confirmed = true
@@ -1046,7 +899,7 @@ export default {
 
       } catch (error) {
         console.error('Confirm purchase option error:', error)
-        errorMessage.value = error.message || 'Failed to confirm purchase option'
+        catalogStore.setError(error.message || 'Failed to confirm purchase option')
       } finally {
         confirmingOptionIds.delete(purchaseOptionId)
       }
@@ -1074,7 +927,6 @@ export default {
     const closeEditItemModal = () => {
       showEditItemModal.value = false
       editingItem.value = null
-      newName.value = ''
     }
 
     const closeAddPurchaseOptionModal = () => {
@@ -1142,9 +994,17 @@ export default {
       updatePurchaseOptionErrorMessage.value = ''
     }
 
+    // Watch for when items are loaded to initialize filtered items
+    watch(() => catalogState.isLoaded, (isLoaded) => {
+      if (isLoaded && !catalogState.loading) {
+        filterItems()
+      }
+    }, { immediate: true })
+
     // Lifecycle
     onMounted(() => {
-      loadItems()
+      // Ensure items are loaded (will only load if not already loaded)
+      catalogStore.ensureLoaded()
     })
 
     return {
@@ -1189,7 +1049,6 @@ export default {
       editingItem,
       editingPurchaseOption,
       itemToDelete,
-      newName,
 
       // Constants
       SUPPORTED_STORES,
@@ -1209,7 +1068,6 @@ export default {
       clearSuccess,
       clearSearch,
       filterItems,
-      loadItems,
       
       // Pagination navigation
       goToPage,
@@ -1221,8 +1079,6 @@ export default {
       handleAddPurchaseOption,
       handleUpdatePurchaseOption,
       handleDeleteItem,
-      addAlternativeName,
-      removeAlternativeName,
       confirmPurchaseOption,
       removePurchaseOption,
       isConfirming,
@@ -1559,29 +1415,12 @@ export default {
   color: var(--white);
 }
 
-.item-names h4, .purchase-options h4 {
+.purchase-options h4 {
   color: var(--primary-color);
   margin: 0 0 0.75rem 0;
   font-size: 1rem;
   font-weight: 600;
 }
-
-.names-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-}
-
-.name-tag {
-  background: var(--primary-light);
-  color: var(--primary-color);
-  padding: 0.25rem 0.75rem;
-  border-radius: 16px;
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
 
 .purchase-options {
   margin-top: 1rem;
@@ -1907,75 +1746,6 @@ select.form-input {
   font-weight: 600;
 }
 
-.names-management {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.add-name-form {
-  display: flex;
-  gap: 0.75rem;
-  align-items: flex-end;
-}
-
-.add-name-form .form-input {
-  flex: 1;
-}
-
-.add-name-btn {
-  background: var(--secondary-color);
-  color: var(--white);
-  border: none;
-  padding: 0.875rem 1rem;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  white-space: nowrap;
-}
-
-.add-name-btn:hover:not(:disabled) {
-  background: var(--primary-color);
-}
-
-.add-name-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.name-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: var(--primary-light);
-  padding: 0.75rem 1rem;
-  border-radius: 8px;
-}
-
-.name-text {
-  color: var(--primary-color);
-  font-weight: 500;
-}
-
-
-.remove-name-btn {
-  background: var(--error-light);
-  color: var(--accent-red);
-  border: none;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.75rem;
-  transition: all 0.3s ease;
-}
-
-.remove-name-btn:hover {
-  background: var(--accent-red);
-  color: var(--white);
-}
-
 .add-purchase-option-btn {
   background: var(--secondary-color);
   color: var(--white);
@@ -2146,11 +1916,6 @@ select.form-input {
   .edit-item-content,
   .delete-confirmation {
     padding: 1.5rem;
-  }
-  
-  .add-name-form {
-    flex-direction: column;
-    align-items: stretch;
   }
   
   .confirmation-actions {
