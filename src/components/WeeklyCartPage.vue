@@ -143,7 +143,18 @@
               <h4 v-if="!ingredient.isMenuHeader && !ingredient.isStoreHeader">
                 {{ ingredient.name }} <span class="ingredient-cost">{{ formatCost(ingredient.totalCost) }}</span>
               </h4>
-              <h4 v-else>{{ ingredient.name }}</h4>
+              <h4 v-else-if="ingredient.isStoreHeader">{{ ingredient.name }}</h4>
+              <div v-else-if="ingredient.isMenuHeader" class="menu-header-content">
+                <div class="menu-header-left">
+                  <span class="menu-header-day-date">{{ ingredient.dayName }} - {{ ingredient.date }}</span>
+                </div>
+                <div class="menu-header-center">
+                  <span class="menu-header-name-owner">{{ ingredient.menuName }} - {{ ingredient.ownerName }}</span>
+                </div>
+                <div class="menu-header-right">
+                  <span class="menu-header-cost">{{ ingredient.cost }}</span>
+                </div>
+              </div>
             </div>
             <div v-if="!ingredient.isMenuHeader && !ingredient.isStoreHeader && ingredient.sources && ingredient.sources.length > 0" class="ingredient-sources">
               <div v-for="(source, index) in ingredient.sources" :key="`${source.menuId}-${source.date}-${index}`" class="source-item">
@@ -899,6 +910,11 @@ export default {
             const costStr = section.menuCost !== null && section.menuCost !== undefined ? formatCost(section.menuCost) : 'N/A'
             sortedIngredients.value.push({
               name: `${dayName} - ${dateStr} - ${section.menuName} - ${ownerLabel} - ${costStr}`,
+              dayName: dayName,
+              date: dateStr,
+              menuName: section.menuName,
+              ownerName: ownerLabel,
+              cost: costStr,
               units: '',
               totalQuantity: 0,
               totalCost: 0,
@@ -1791,6 +1807,51 @@ export default {
   color: var(--secondary-color);
 }
 
+.menu-header-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  gap: 2rem;
+  padding: 0.25rem 0;
+  white-space: nowrap;
+}
+
+.menu-header-left {
+  flex-shrink: 0;
+}
+
+.menu-header-day-date {
+  color: #0072BB;
+  font-weight: 600;
+  font-size: 1.1rem;
+  white-space: nowrap;
+}
+
+.menu-header-center {
+  flex: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.menu-header-name-owner {
+  color: #424242;
+  font-weight: 600;
+  font-size: 1.1rem;
+  white-space: nowrap;
+}
+
+.menu-header-right {
+  flex-shrink: 0;
+}
+
+.menu-header-cost {
+  color: #ED2939;
+  font-weight: 700;
+  font-size: 1.1rem;
+  white-space: nowrap;
+}
+
 .loading-ingredients {
   text-align: center;
   padding: 3rem;
@@ -1852,6 +1913,11 @@ export default {
 
 .ingredient-info {
   margin-bottom: 0.75rem;
+}
+
+.ingredient-item.menu-header .ingredient-info {
+  margin-bottom: 0;
+  width: 100%;
 }
 
 .ingredient-info h4 {
