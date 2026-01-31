@@ -17,6 +17,13 @@
         <button @click="goToCurrentWeek" class="current-week-btn" :disabled="isLoading">
           Go to Current Week
         </button>
+        <button
+          @click="refreshWeeklyCartBundle"
+          class="secondary-btn refresh-btn"
+          :disabled="isLoading || isLoadingIngredients"
+        >
+          Refresh
+        </button>
         <div class="goto-date">
           <input
             type="date"
@@ -114,9 +121,6 @@
               <span>By Store</span>
             </label>
           </div>
-          <button @click="loadWeeklyIngredients" class="action-btn secondary-btn" :disabled="isLoadingIngredients">
-            {{ isLoadingIngredients ? 'Loading...' : 'Refresh Ingredients' }}
-          </button>
         </div>
       </div>
       
@@ -212,13 +216,9 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { weeklyCartService } from '../services/weeklyCartService.js'
 import { weeklyCartStore, weeklyCartState } from '../stores/weeklyCartStore.js'
-import { purchaseSystemService } from '../services/purchaseSystemService.js'
 import { menuCollectionService } from '../services/menuCollectionService.js'
-import { cookBookService } from '../services/cookBookService.js'
 import { authState } from '../stores/authStore.js'
-import { authService } from '../services/authService.js'
 import { fetchCartCost, fetchMenuCost, formatCost } from '../utils/costUtils.js'
-import { storeCatalogService } from '../services/storeCatalogService.js'
 
 export default {
   name: 'WeeklyCartPage',
@@ -380,42 +380,6 @@ export default {
       return `${formatDate(weekStart)} - ${formatDate(weekEnd)}`
     }
 
-    const fetchMenuExtras = async (menuId, ownerId) => {
-      // Fetch username for owner
-      let ownerName = null
-      try {
-        // Prefer authState if matches current user
-        if (authState.user?.id === ownerId && authState.user?.username) {
-          ownerName = authState.user.username
-        } else {
-          ownerName = await authService.getUsername(ownerId)
-        }
-      } catch (e) {
-        ownerName = ownerId
-      }
-
-      // Fetch recipe names
-      const recipeNames = []
-      try {
-        const recipesResp = await menuCollectionService.getRecipesInMenu(menuId)
-        const recipeMap = recipesResp[0]?.menuRecipes || {}
-        const recipeIds = Object.keys(recipeMap)
-        for (const recipeId of recipeIds) {
-          try {
-            const details = await cookBookService.getRecipeDetails(recipeId)
-            const name = details[0]?.name || `Recipe ${recipeId}`
-            recipeNames.push(name)
-          } catch (e) {
-            recipeNames.push(`Recipe ${recipeId}`)
-          }
-        }
-      } catch (e) {
-        // ignore, leave empty list
-      }
-
-      return { ownerName, recipeNames }
-    }
-
     const getMenuForDate = (date) => {
       const dateStr = formatDate(date)
       return weekMenus.value[dateStr] || null
@@ -427,348 +391,310 @@ export default {
       return parseFloat(quantity.toFixed(2))
     }
 
-    /**
-     * Build a mapping from atomicOrderId to purchaseOption ID by traversing using associateIDs
-     * Returns: Map<atomicOrderId, { purchaseOptionId, itemId, quantity, units, price }>
-     */
-    const getAtomicOrderMapping = async (cartId) => {
-      const mapping = new Map() // atomicOrderId -> { purchaseOptionId, itemId, quantity, units, price }
-      const processedItems = new Set() // Track items we've already processed
+    const BUNDLE_CACHE_PREFIX = 'weeklyCartBundle'
 
+    const buildBundleCacheKey = (weekStartStr, cartId) => {
+      return `${BUNDLE_CACHE_PREFIX}:${weekStartStr}:${cartId}`
+    }
+
+    const readBundleCache = (weekStartStr, cartId) => {
+      if (!weekStartStr || !cartId) return null
       try {
-        // Get all menus in the week
-        const weekDatesArray = weeklyCartService.getWeekDates(currentWeekStart.value)
-        
-        // Collect all unique ingredient names from all menus
-        const ingredientNames = new Set()
-        
-        for (const date of weekDatesArray) {
-          const dateStr = formatDate(date)
-          const menu = weekMenus.value[dateStr]
-          
-          if (menu) {
-            try {
-              // Get recipes in this menu
-              const recipesResp = await menuCollectionService.getRecipesInMenu(menu.id)
-              if (recipesResp && recipesResp.length > 0 && recipesResp[0].menuRecipes) {
-                const recipeIds = Object.keys(recipesResp[0].menuRecipes)
-                
-                // Get ingredients from each recipe
-                for (const recipeId of recipeIds) {
-                  try {
-                    const ingredientsResp = await cookBookService.getRecipeIngredients(recipeId)
-                    if (ingredientsResp && ingredientsResp.length > 0 && ingredientsResp[0].ingredients) {
-                      const ingredients = ingredientsResp[0].ingredients
-                      
-                      // Collect ingredient names
-                      for (const ingredient of ingredients) {
-                        if (ingredient.name) {
-                          ingredientNames.add(ingredient.name)
-                        }
-                      }
-                    }
-                  } catch (err) {
-                    console.error(`Error getting ingredients for recipe ${recipeId}:`, err)
-                  }
-                }
-              }
-            } catch (err) {
-              console.error(`Error getting recipes for menu ${menu.id}:`, err)
-            }
-          }
-        }
-
-        console.log(`Found ${ingredientNames.size} unique ingredient names`)
-
-        // For each ingredient name, get the item and its purchase options
-        for (const ingredientName of ingredientNames) {
-          try {
-            // Get item by name (may throw if item doesn't exist)
-            const itemResp = await storeCatalogService.getItemByName(ingredientName)
-            if (!itemResp || itemResp.length === 0 || !itemResp[0].item) {
-              // Item doesn't exist in StoreCatalog, skip it
-              console.debug(`Item not found in StoreCatalog: ${ingredientName}`)
-              continue
-            }
-
-            const itemId = itemResp[0].item
-            
-            // Skip if we've already processed this item
-            if (processedItems.has(itemId)) {
-              continue
-            }
-            processedItems.add(itemId)
-
-            // Get all purchase options for this item
-            try {
-              const purchaseOptionsResp = await storeCatalogService.getItemPurchaseOptions(itemId)
-              if (!purchaseOptionsResp || purchaseOptionsResp.length === 0 || !purchaseOptionsResp[0].purchaseOptions) {
-                // No purchase options for this item, skip it
-                console.debug(`No purchase options found for item ${itemId} (${ingredientName})`)
-                continue
-              }
-
-              const purchaseOptionIds = purchaseOptionsResp[0].purchaseOptions
-
-              // For each purchase option, get its AtomicOrder and map the _id
-              for (const purchaseOptionId of purchaseOptionIds) {
-                try {
-                  const atomicOrderResp = await purchaseSystemService.getOrderByAssociateID(purchaseOptionId)
-                  if (atomicOrderResp && atomicOrderResp.length > 0 && atomicOrderResp[0].order) {
-                    const atomicOrder = atomicOrderResp[0].order
-                    const atomicOrderId = atomicOrder._id
-                    
-                    // Map the AtomicOrder _id to its purchaseOption ID and item ID
-                    mapping.set(atomicOrderId, {
-                      purchaseOptionId,
-                      itemId,
-                      quantity: atomicOrder.quantity,
-                      units: atomicOrder.units,
-                      price: atomicOrder.price
-                    })
-                  }
-                } catch (err) {
-                  // Continue to next purchaseOption
-                  console.debug(`Error getting atomic order for purchaseOption ${purchaseOptionId}:`, err)
-                }
-              }
-            } catch (err) {
-              // Error getting purchase options, skip this item
-              console.debug(`Error getting purchase options for item ${itemId}:`, err)
-              continue
-            }
-          } catch (err) {
-            // Item doesn't exist or error getting item, skip it
-            console.debug(`Item not found or error getting item for ingredient ${ingredientName}:`, err.message || err)
-            continue
-          }
-        }
-
-        console.log(`Built mapping for ${mapping.size} atomicOrders`)
-        return mapping
+        const raw = sessionStorage.getItem(buildBundleCacheKey(weekStartStr, cartId))
+        if (!raw) return null
+        const parsed = JSON.parse(raw)
+        return parsed?.data || parsed
       } catch (err) {
-        console.error('Error building atomic order mapping:', err)
-        return mapping
+        console.debug('[WeeklyCartPage] Failed to read bundle cache:', err)
+        return null
       }
     }
 
-    const loadWeeklyIngredients = async () => {
+    const writeBundleCache = (weekStartStr, cartId, bundle) => {
+      if (!weekStartStr || !cartId || !bundle) return
+      try {
+        sessionStorage.setItem(
+          buildBundleCacheKey(weekStartStr, cartId),
+          JSON.stringify({ data: bundle, cachedAt: Date.now() })
+        )
+      } catch (err) {
+        console.debug('[WeeklyCartPage] Failed to write bundle cache:', err)
+      }
+    }
+
+    const clearBundleCacheForWeek = (weekStartStr) => {
+      if (!weekStartStr) return
+      try {
+        const prefix = `${BUNDLE_CACHE_PREFIX}:${weekStartStr}:`
+        const keysToRemove = []
+        for (let i = 0; i < sessionStorage.length; i += 1) {
+          const key = sessionStorage.key(i)
+          if (key && key.startsWith(prefix)) {
+            keysToRemove.push(key)
+          }
+        }
+        keysToRemove.forEach((key) => sessionStorage.removeItem(key))
+      } catch (err) {
+        console.debug('[WeeklyCartPage] Failed to clear bundle cache:', err)
+      }
+    }
+
+    const getBundleRoot = (response) => {
+      const root = Array.isArray(response) ? response[0] : response
+      if (!root || typeof root !== 'object') {
+        return {}
+      }
+      return root
+    }
+
+    const buildSourcesByName = (menus) => {
+      const sources = new Map()
+
+      if (!Array.isArray(menus)) return sources
+
+      menus.forEach((menu) => {
+        const menuId = menu?.menuId || menu?.id
+        const menuName = menu?.name || menu?.menuName || (menuId ? `Menu ${menuId}` : 'Menu')
+        const ownerName = menu?.ownerName || menu?.owner || menu?.ownerId || 'Unknown User'
+        const date = menu?.date
+
+        const recipes = Array.isArray(menu?.recipes) ? menu.recipes : []
+        recipes.forEach((recipe) => {
+          const ingredients = Array.isArray(recipe?.ingredients) ? recipe.ingredients : []
+          ingredients.forEach((ingredient) => {
+            if (!ingredient?.name) return
+            if (!sources.has(ingredient.name)) {
+              sources.set(ingredient.name, [])
+            }
+            sources.get(ingredient.name).push({
+              menuId,
+              menuName,
+              ownerName,
+              date,
+              quantity: Number(ingredient.quantity ?? 0),
+              units: ingredient.units || ''
+            })
+          })
+        })
+      })
+
+      return sources
+    }
+
+    const buildWeeklyIngredientsFromBundle = (bundle) => {
+      const aggregatedIngredients = Array.isArray(bundle?.aggregatedIngredients)
+        ? bundle.aggregatedIngredients
+        : []
+      const optimalOrders = Array.isArray(bundle?.optimalPurchase?.atomicOrders)
+        ? bundle.optimalPurchase.atomicOrders
+        : []
+      const menus = Array.isArray(bundle?.menus) ? bundle.menus : []
+
+      const itemById = new Map()
+      const purchaseOptionById = new Map()
+
+      aggregatedIngredients.forEach((ingredient) => {
+        const name = ingredient?.name || 'Unknown Item'
+        const catalogItem = ingredient?.catalogItem || {}
+        const itemId = catalogItem?.itemId || catalogItem?.id
+        if (itemId) {
+          itemById.set(itemId, { name })
+        }
+        const purchaseOptions = Array.isArray(catalogItem?.purchaseOptions) ? catalogItem.purchaseOptions : []
+        purchaseOptions.forEach((option) => {
+          const purchaseOptionId = option?.purchaseOptionId || option?.id
+          if (!purchaseOptionId) return
+          purchaseOptionById.set(purchaseOptionId, {
+            ...option,
+            itemId,
+            name
+          })
+        })
+      })
+
+      const sourcesByName = buildSourcesByName(menus)
+      const ingredientsMap = new Map()
+
+      if (optimalOrders.length > 0) {
+        optimalOrders.forEach((order) => {
+          const purchaseOptionId = order?.purchaseOptionId || order?.purchaseOption?.id
+          const purchaseOption = purchaseOptionId ? purchaseOptionById.get(purchaseOptionId) : null
+          const itemId = order?.itemId || purchaseOption?.itemId
+          const itemName = itemById.get(itemId)?.name || purchaseOption?.name || 'Unknown Item'
+          const store = purchaseOption?.store || order?.store || 'Unknown Store'
+          const units = order?.units || purchaseOption?.units || ''
+
+          const rawCount = Number(order?.count ?? order?.multiplier ?? order?.quantityToBuy ?? order?.qtyToBuy ?? 1)
+          const orderCount = Number.isFinite(rawCount) && rawCount > 0 ? rawCount : 1
+          const rawQuantity = Number(order?.quantity ?? 0)
+          const totalQuantity = Number.isFinite(rawQuantity) ? rawQuantity * orderCount : 0
+
+          const rawPrice = Number(order?.price ?? purchaseOption?.price ?? 0)
+          const totalCost = Number.isFinite(rawPrice) ? rawPrice * orderCount : 0
+
+          const key = `${itemName}::${store}::${units}`
+          const baseEntry = ingredientsMap.get(key) || {
+            name: itemName,
+            units,
+            totalQuantity: 0,
+            totalCost: 0,
+            store,
+            sources: []
+          }
+
+          baseEntry.totalQuantity += totalQuantity
+          baseEntry.totalCost += totalCost
+
+          if (!baseEntry.sources.length && sourcesByName.has(itemName)) {
+            baseEntry.sources = sourcesByName.get(itemName).map((source) => ({
+              ...source,
+              store: source.store || store
+            }))
+          }
+
+          ingredientsMap.set(key, baseEntry)
+        })
+      } else {
+        aggregatedIngredients.forEach((ingredient) => {
+          const name = ingredient?.name || 'Unknown Item'
+          const units = ingredient?.units || ''
+          const totalQuantity = Number(ingredient?.totalQuantity ?? 0)
+          const purchaseOptions = Array.isArray(ingredient?.catalogItem?.purchaseOptions)
+            ? ingredient.catalogItem.purchaseOptions
+            : []
+          const fallbackOption = purchaseOptions[0]
+          const store = fallbackOption?.store || 'Unknown Store'
+          const totalCost = Number(fallbackOption?.price ?? 0)
+
+          const key = `${name}::${store}::${units}`
+          const baseEntry = ingredientsMap.get(key) || {
+            name,
+            units,
+            totalQuantity: 0,
+            totalCost: 0,
+            store,
+            sources: []
+          }
+
+          baseEntry.totalQuantity += totalQuantity
+          baseEntry.totalCost += totalCost
+
+          if (!baseEntry.sources.length && sourcesByName.has(name)) {
+            baseEntry.sources = sourcesByName.get(name).map((source) => ({
+              ...source,
+              store: source.store || store
+            }))
+          }
+
+          ingredientsMap.set(key, baseEntry)
+        })
+      }
+
+      return Array.from(ingredientsMap.values()).sort((a, b) => a.name.localeCompare(b.name))
+    }
+
+    const applyBundleData = (bundle) => {
+      const menus = Array.isArray(bundle?.menus) ? bundle.menus : []
+      const menuMapping = {}
+
+      menus.forEach((menu) => {
+        const menuId = menu?.menuId || menu?.id
+        const menuName = menu?.name || menu?.menuName || (menuId ? `Menu ${menuId}` : 'Menu')
+        const owner = menu?.owner || menu?.ownerId || null
+        const ownerName = menu?.ownerName || null
+        const date = menu?.date
+
+        const recipeNames = Array.isArray(menu?.recipes)
+          ? menu.recipes
+              .map((recipe) => recipe?.name || (recipe?.recipeId ? `Recipe ${recipe.recipeId}` : null))
+              .filter(Boolean)
+          : []
+
+        if (date) {
+          menuMapping[date] = {
+            id: menuId,
+            name: menuName,
+            owner,
+            ownerName,
+            date,
+            recipeNames
+          }
+        }
+      })
+
+      weekMenus.value = { ...menuMapping }
+      weeklyIngredients.value = buildWeeklyIngredientsFromBundle(bundle)
+      applySorting()
+    }
+
+    const loadMenuCosts = async () => {
+      const weekDatesArray = weeklyCartService.getWeekDates(currentWeekStart.value)
+      await Promise.all(
+        weekDatesArray.map(async (date) => {
+          const dateStr = formatDate(date)
+          const menu = weekMenus.value[dateStr]
+          if (menu && menu.id) {
+            try {
+              const menuCost = await fetchMenuCost(menu.id)
+              if (menuCost !== null) {
+                weekMenus.value[dateStr] = { ...menu, cost: menuCost }
+              }
+            } catch (err) {
+              console.error(`Error fetching cost for menu ${menu.id}:`, err)
+            }
+          }
+        })
+      )
+    }
+
+    const loadWeeklyCartBundle = async ({ forceRefresh = false } = {}) => {
       isLoadingIngredients.value = true
       weeklyIngredients.value = []
 
-      try {
-        const currentUser = authState.user
-        if (!currentUser) {
-          throw new Error('No user logged in')
-        }
+      const weekStartStr = formatDate(currentWeekStart.value)
+      weeklyCartStore.clearError(weekStartStr)
 
-        // Get cart ID
+      try {
+        await weeklyCartStore.ensureCartLoaded(currentWeekStart.value)
+
         const cart = currentCart.value
         if (!cart || !cart.id) {
-          console.log('No cart available for this week')
+          weekMenus.value = {}
           weeklyIngredients.value = []
           applySorting()
           return
         }
 
-        // Get the cart's CompositeOrder
-        const cartOrderResponse = await purchaseSystemService.getOrderByAssociateID(cart.id)
-        if (!cartOrderResponse || cartOrderResponse.length === 0 || !cartOrderResponse[0].order) {
-          console.log('No order found for cart:', cart.id)
-          weeklyIngredients.value = []
-          applySorting()
-          return
-        }
-
-        const cartCompositeOrderId = cartOrderResponse[0].order._id
-        console.log('Cart CompositeOrder ID:', cartCompositeOrderId)
-
-        // Get optimal purchase
-        const optimalPurchaseResponse = await purchaseSystemService.getOptimalPurchase(cartCompositeOrderId)
-        if (!optimalPurchaseResponse || optimalPurchaseResponse.length === 0 || !optimalPurchaseResponse[0].optimalPurchase) {
-          console.log('No optimal purchase found for cart')
-          weeklyIngredients.value = []
-          applySorting()
-          return
-        }
-
-        const optimalPurchase = optimalPurchaseResponse[0].optimalPurchase
-        console.log('Cart optimal purchase:', optimalPurchase)
-
-        // Build mapping from atomicOrderId to purchaseOption ID using associateIDs
-        console.log('Building atomic order mapping...')
-        const atomicOrderToPurchaseOptionMap = await getAtomicOrderMapping(cart.id)
-        console.log('Atomic order mapping built:', atomicOrderToPurchaseOptionMap.size, 'entries')
-
-        // Build mapping from atomicOrderId to menu sources
-        // For each menu, get its optimal purchase and map atomicOrderIds to menu info
-        const atomicOrderToMenuMap = new Map() // atomicOrderId -> Array of { menuId, menuName, date, ownerName, quantity, units, quantityInBase, baseUnit }
-        
-        const weekDatesArray = weeklyCartService.getWeekDates(currentWeekStart.value)
-        for (const date of weekDatesArray) {
-          const dateStr = formatDate(date)
-          const menu = weekMenus.value[dateStr]
-          
-          if (menu) {
-            try {
-              // Get menu's CompositeOrder
-              const menuOrderResponse = await purchaseSystemService.getOrderByAssociateID(menu.id)
-              if (!menuOrderResponse || menuOrderResponse.length === 0 || !menuOrderResponse[0].order) {
-                console.log(`No order found for menu ${menu.id}`)
-                continue
-              }
-
-              const menuCompositeOrderId = menuOrderResponse[0].order._id
-              
-              // Get optimal purchase for this menu
-              const menuOptimalPurchaseResponse = await purchaseSystemService.getOptimalPurchase(menuCompositeOrderId)
-              if (!menuOptimalPurchaseResponse || menuOptimalPurchaseResponse.length === 0 || !menuOptimalPurchaseResponse[0].optimalPurchase) {
-                console.log(`No optimal purchase found for menu ${menu.id}`)
-                continue
-              }
-
-              const menuOptimalPurchase = menuOptimalPurchaseResponse[0].optimalPurchase
-              const ownerDisplayName = menu.ownerName || (menu.owner === authState.user?.id ? (authState.user?.username || 'You') : 'Other User')
-
-              // Map each atomicOrderId in this menu's optimal purchase to menu info
-              for (const [atomicOrderId, quantity] of Object.entries(menuOptimalPurchase)) {
-                if (!atomicOrderToMenuMap.has(atomicOrderId)) {
-                  atomicOrderToMenuMap.set(atomicOrderId, [])
-                }
-                
-                const atomicOrderData = atomicOrderToPurchaseOptionMap.get(atomicOrderId)
-                if (atomicOrderData) {
-                  const quantityToBuy = Number(quantity) || 0
-                  const atomicOrderQuantity = atomicOrderData.quantity || 1
-                  const atomicOrderUnits = atomicOrderData.units || ''
-                  const totalQuantity = quantityToBuy * atomicOrderQuantity
-                  
-                  const normalized = normalizeToBase(totalQuantity, atomicOrderUnits)
-                  
-                  atomicOrderToMenuMap.get(atomicOrderId).push({
-                    menuId: menu.id,
-                    menuName: menu.name,
-                    ownerName: ownerDisplayName,
-                    date: dateStr,
-                    quantity: normalized.originalQuantity,
-                    units: normalized.originalUnits,
-                    quantityInBase: normalized.quantityInBase,
-                    baseUnit: normalized.baseUnit
-                  })
-                }
-              }
-            } catch (err) {
-              console.error(`Error getting optimal purchase for menu ${menu.id}:`, err)
-            }
+        if (!forceRefresh) {
+          const cached = readBundleCache(weekStartStr, cart.id)
+          if (cached) {
+            applyBundleData(cached)
+            await loadMenuCosts()
+            return
           }
         }
 
-        console.log('Menu mapping built:', atomicOrderToMenuMap.size, 'atomicOrders mapped to menus')
-
-        const ingredientsMap = new Map() // key: item name + baseUnit + store, value: ingredient data
-
-        // For each atomicOrderId in optimalPurchase
-        for (const [atomicOrderId, quantity] of Object.entries(optimalPurchase)) {
-          try {
-
-            // Get the purchaseOption data for this atomicOrderId
-            const atomicOrderData = atomicOrderToPurchaseOptionMap.get(atomicOrderId)
-            if (!atomicOrderData) {
-              console.warn(`Could not find purchaseOption for atomicOrderId ${atomicOrderId}`)
-              continue
-            }
-
-            // Get purchase option details to get store
-            const purchaseOptionDetailsResp = await storeCatalogService.getPurchaseOptionDetails(atomicOrderData.purchaseOptionId)
-            if (!purchaseOptionDetailsResp || purchaseOptionDetailsResp.length === 0) {
-              console.warn(`Could not get purchase option details for ${atomicOrderData.purchaseOptionId}`)
-              continue
-            }
-
-            const purchaseOptionDetails = purchaseOptionDetailsResp[0]
-            const store = purchaseOptionDetails.store || 'Unknown Store'
-
-            // Get item name
-            const itemNameResp = await storeCatalogService.getItemName(atomicOrderData.itemId)
-            const itemName = itemNameResp && itemNameResp.length > 0 ? itemNameResp[0].name : 'Unknown Item'
-
-            // Get quantity from optimal purchase (this is the number of units to buy)
-            const quantityToBuy = Number(quantity) || 0
-            const atomicOrderQuantity = atomicOrderData.quantity || 1
-            const atomicOrderUnits = atomicOrderData.units || purchaseOptionDetails.units || ''
-
-            // Calculate total quantity needed
-            const totalQuantity = quantityToBuy * atomicOrderQuantity
-
-            // Normalize quantity
-            const normalized = normalizeToBase(totalQuantity, atomicOrderUnits)
-            const key = `${itemName}-${normalized.baseUnit}-${store}`
-
-            // Get menu sources for this atomicOrderId and add store information to each source
-            const menuSources = atomicOrderToMenuMap.get(atomicOrderId) || []
-            // Add store to each source since we now have it
-            const menuSourcesWithStore = menuSources.map(source => ({
-              ...source,
-              store: store
-            }))
-
-            // Calculate cost: quantityToBuy * price per unit
-            const price = atomicOrderData.price || 0
-            const cost = quantityToBuy * price
-
-            if (ingredientsMap.has(key)) {
-              const existing = ingredientsMap.get(key)
-              existing.totalBaseQuantity += normalized.quantityInBase
-              existing.totalCost = (existing.totalCost || 0) + cost
-              // Merge menu sources with store information
-              existing.sources.push(...menuSourcesWithStore)
-            } else {
-              ingredientsMap.set(key, {
-                name: itemName,
-                baseUnit: normalized.baseUnit,
-                totalBaseQuantity: normalized.quantityInBase,
-                totalCost: cost,
-                store: store,
-                purchaseOptionId: atomicOrderData.purchaseOptionId,
-                itemId: atomicOrderData.itemId,
-                sources: [...menuSourcesWithStore] // Store menu sources with store information
-              })
-            }
-          } catch (err) {
-            console.error(`Error processing atomicOrderId ${atomicOrderId}:`, err)
-          }
+        const response = await weeklyCartService.getWeeklyCartPageBundle(cart.id, weekStartStr)
+        const bundleRoot = getBundleRoot(response)
+        if (bundleRoot?.error) {
+          throw new Error(bundleRoot.error)
         }
 
-        // Convert map to array and format
-        weeklyIngredients.value = Array.from(ingredientsMap.values())
-          .map((entry) => {
-            const { quantity: displayQuantity, units: displayUnits } = formatQuantityFromBase(entry.totalBaseQuantity, entry.baseUnit)
-            return {
-              name: entry.name,
-              units: displayUnits,
-              totalQuantity: displayQuantity,
-              baseUnit: entry.baseUnit,
-              totalBaseQuantity: entry.totalBaseQuantity,
-              totalCost: entry.totalCost || 0,
-              store: entry.store,
-              purchaseOptionId: entry.purchaseOptionId,
-              itemId: entry.itemId,
-              sources: entry.sources // Populated with menu information from optimal purchase, including store
-            }
-          })
-          .sort((a, b) => a.name.localeCompare(b.name))
-
-        console.log('Weekly ingredients loaded from optimal purchase:', weeklyIngredients.value)
-        
-        // Apply initial sorting
-        applySorting()
-
+        writeBundleCache(weekStartStr, cart.id, bundleRoot)
+        applyBundleData(bundleRoot)
+        await loadMenuCosts()
       } catch (err) {
-        // Error loading ingredients - this is separate from cart errors
-        console.error('Error loading weekly ingredients:', err)
+        console.error('[WeeklyCartPage] Error loading weekly cart bundle:', err)
+        weeklyCartStore.setError(weekStartStr, err.message || 'Failed to load weekly cart')
       } finally {
         isLoadingIngredients.value = false
       }
+    }
+
+    const refreshWeeklyCartBundle = async () => {
+      const weekStartStr = formatDate(currentWeekStart.value)
+      clearBundleCacheForWeek(weekStartStr)
+      await loadWeeklyCartBundle({ forceRefresh: true })
     }
     
     const fullDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -959,36 +885,10 @@ export default {
           throw new Error('No user logged in')
         }
 
-        // Use store to get week menu mapping (uses cache if available)
         const weekStartStr = formatDate(currentWeekStart.value)
         console.log('[WeeklyCartPage] Loading week data for week starting:', weekStartStr)
-        
-        // Get cached mapping or build it if needed
-        const weekMenuMapping = await weeklyCartStore.getWeekMenuMapping(currentWeekStart.value)
-        
-        // Update local state with cached mapping
-        weekMenus.value = { ...weekMenuMapping }
-        console.log('[WeeklyCartPage] Week menus loaded from store:', weekMenus.value)
 
-        // Fetch menu costs for each menu
-        const weekDatesArray = weeklyCartService.getWeekDates(currentWeekStart.value)
-        for (const date of weekDatesArray) {
-          const dateStr = formatDate(date)
-          const menu = weekMenus.value[dateStr]
-          if (menu && menu.id) {
-            try {
-              const menuCost = await fetchMenuCost(menu.id)
-              if (menuCost !== null) {
-                weekMenus.value[dateStr] = { ...menu, cost: menuCost }
-              }
-            } catch (err) {
-              console.error(`Error fetching cost for menu ${menu.id}:`, err)
-            }
-          }
-        }
-
-        // Load weekly ingredients after menus are loaded
-        await loadWeeklyIngredients()
+        await loadWeeklyCartBundle()
         
         // Load cart cost after cart is loaded
         await loadCartCost()
@@ -1059,11 +959,11 @@ export default {
           
           // Menu is automatically added to weekly cart when created (backend synchronization)
           // Cart is automatically created if one doesn't exist for this week
-          // Invalidate cache so UI reflects the new menu
-          weeklyCartStore.clearWeekMenuMapping(dateStr)
+            // Invalidate bundle cache so UI reflects the new menu
+            clearBundleCacheForWeek(weekStart)
           
           closeAddMenuModal()
-          // Refresh data - store will rebuild mapping with new menu
+            // Refresh data with updated bundle
           await loadWeekData()
           // Refresh cart cost after adding menu
           await loadCartCost()
@@ -1094,7 +994,9 @@ export default {
         action: async () => {
           try {
             await weeklyCartStore.removeMenuFromCart(menu.id)
-            // Refresh data - store will rebuild mapping without this menu
+              const weekStart = weeklyCartService.formatDate(currentWeekStart.value)
+              clearBundleCacheForWeek(weekStart)
+              // Refresh data with updated bundle
             await loadWeekData()
             // Refresh cart cost after removing menu
             await loadCartCost()
@@ -1187,7 +1089,7 @@ export default {
       getMenuForDate,
       formatQuantity,
       formatCost,
-      loadWeeklyIngredients,
+      refreshWeeklyCartBundle,
       applySorting,
       handleMenuSortChange,
       handleStoreSortChange,
@@ -1308,6 +1210,11 @@ export default {
 
 .current-week-btn:hover:not(:disabled) {
   background: var(--primary-color);
+}
+
+.refresh-btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
 }
 
 .loading-state, .error-state {

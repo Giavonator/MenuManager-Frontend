@@ -156,14 +156,7 @@ class WeeklyCartStore {
       }
 
       state.currentWeekStart = weekStart
-      
-      // Build and cache week menu mapping after loading cart
-      // This is done asynchronously so it doesn't block the cart loading
-      this.buildWeekMenuMapping(weekStartDate).catch(err => {
-        console.error('[WeeklyCartStore] Error building week menu mapping:', err)
-        // Don't throw - mapping can be built later if needed
-      })
-      
+
       console.log('[WeeklyCartStore] loadCartForWeek:finish')
     } catch (error) {
       console.error('[WeeklyCartStore] Error loading cart for week:', error)

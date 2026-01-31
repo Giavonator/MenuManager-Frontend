@@ -176,6 +176,25 @@ class WeeklyCartService {
   }
 
   /**
+   * Get the WeeklyCart page bundle for a cart and week start.
+   * @param {string} cartId - Weekly cart ID
+   * @param {string} weekStart - Week start date in YYYY-MM-DD format
+   * @returns {Promise<Object>} - The response bundle
+   */
+  async getWeeklyCartPageBundle(cartId, weekStart) {
+    try {
+      const response = await apiClient.post('/api/WeeklyCart/_getWeeklyCartPageBundle', {
+        cartId,
+        weekStart
+      })
+      return response.data
+    } catch (error) {
+      console.error('Get weekly cart page bundle error:', error)
+      throw error
+    }
+  }
+
+  /**
    * Utility function to get the Sunday of the week containing a given date
    * @param {Date} date - The date to find the week for
    * @returns {Date} - The Sunday of that week
