@@ -109,7 +109,26 @@
           >
             <div class="recipe-header">
               <div class="recipe-title-section">
-                <h3 class="recipe-name">{{ recipe.name }}</h3>
+                <div class="recipe-title-row">
+                  <button
+                    type="button"
+                    class="recipe-toggle-btn"
+                    :aria-expanded="isRecipeExpanded(recipe.id)"
+                    :aria-controls="`recipe-details-${recipe.id}`"
+                    @click="toggleRecipeExpanded(recipe.id)"
+                  >
+                    <svg
+                      class="recipe-toggle-icon"
+                      :class="{ 'is-expanded': isRecipeExpanded(recipe.id) }"
+                      viewBox="0 0 24 24"
+                      aria-hidden="true"
+                    >
+                      <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    <span class="sr-only">Toggle recipe details</span>
+                  </button>
+                  <h3 class="recipe-name">{{ recipe.name }}</h3>
+                </div>
                 <div class="recipe-meta">
                   <span class="scaling-factor">Scaling: {{ recipe.scalingFactor }}x</span>
                   <span class="serving-quantity">{{ recipe.servingQuantity }} servings</span>
@@ -139,7 +158,11 @@
             </div>
 
             <!-- Recipe Details -->
-            <div class="recipe-details">
+            <div
+              class="recipe-details"
+              :id="`recipe-details-${recipe.id}`"
+              v-show="isRecipeExpanded(recipe.id)"
+            >
               <!-- Ingredients -->
               <div class="ingredients-section">
                 <h4>Ingredients</h4>
@@ -977,6 +1000,7 @@ export default {
     
     // Track which recipes are showing their edit actions
     const recipesShowingActions = ref(new Set())
+    const expandedRecipes = ref(new Set())
 const showIngredientForm = ref(false)
 const showEditIngredientForm = ref(false)
 const editingIngredientIndex = ref(null) // Track which ingredient is being edited (null = adding new, number = editing existing)
@@ -1549,6 +1573,30 @@ const editingIngredientIndex = ref(null) // Track which ingredient is being edit
     const isRecipeShowingActions = (recipeId) => {
       return recipesShowingActions.value.has(recipeId)
     }
+
+    const toggleRecipeExpanded = (recipeId) => {
+      const nextExpanded = new Set(expandedRecipes.value)
+      if (nextExpanded.has(recipeId)) {
+        nextExpanded.delete(recipeId)
+      } else {
+        nextExpanded.add(recipeId)
+      }
+      expandedRecipes.value = nextExpanded
+    }
+
+    const isRecipeExpanded = (recipeId) => {
+      return expandedRecipes.value.has(recipeId)
+    }
+
+    watch(recipes, (nextRecipes) => {
+      const nextIds = new Set((nextRecipes || []).map(recipe => recipe.id))
+      const pruned = new Set(
+        [...expandedRecipes.value].filter(recipeId => nextIds.has(recipeId))
+      )
+      if (pruned.size !== expandedRecipes.value.size) {
+        expandedRecipes.value = pruned
+      }
+    })
     
     const editRecipe = (recipe) => {
       editingRecipe.value = recipe
@@ -2102,6 +2150,8 @@ const editingIngredientIndex = ref(null) // Track which ingredient is being edit
       editRecipe,
       toggleRecipeActions,
       isRecipeShowingActions,
+      toggleRecipeExpanded,
+      isRecipeExpanded,
       addIngredientToEdit,
       cancelAddIngredientToEdit,
       removeIngredientFromEdit,
@@ -2501,6 +2551,18 @@ button::-moz-focus-inner { border: 0; }
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .recipe-header {
   display: flex;
   justify-content: space-between;
@@ -2516,6 +2578,45 @@ button::-moz-focus-inner { border: 0; }
   gap: 0.5rem;
   flex: 1;
   min-width: 200px;
+}
+
+.recipe-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.recipe-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--primary-color);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.recipe-toggle-btn:hover {
+  background: var(--primary-light);
+}
+
+.recipe-toggle-btn:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.recipe-toggle-icon {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.2s ease;
+}
+
+.recipe-toggle-icon.is-expanded {
+  transform: rotate(180deg);
 }
 
 .recipe-title-section .recipe-meta {
