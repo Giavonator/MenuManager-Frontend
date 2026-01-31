@@ -1,8 +1,17 @@
 <template>
-  <div class="store-catalog-container">
-    <div class="catalog-header">
-      <h1>Store Catalog</h1>
-    <p>Manage your entire ingredient catalog with a variety of different purchase options</p>
+  <div
+    :class="[
+      'store-catalog-container',
+      showPageHeaders ? 'page-container-with-header' : 'page-container-no-header'
+    ]"
+  >
+    <div v-if="showPageHeaders" class="page-header-block">
+      <div class="page-header-text">
+        <h1 class="page-header-title">Store Catalog</h1>
+        <p class="page-header-description">
+          Manage your entire ingredient catalog with a variety of different purchase options
+        </p>
+      </div>
     </div>
 
     <!-- Search and Filter Section -->
@@ -513,6 +522,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { storeCatalogService } from '../services/storeCatalogService.js'
 import { SUPPORTED_STORES, SUPPORTED_UNITS } from '../constants/storeCatalogConstants.js'
 import { catalogStore, catalogState } from '../stores/catalogStore.js'
+import { SHOW_PAGE_HEADERS } from '../constants/uiConfig.js'
 
 export default {
   name: 'StoreCatalogPage',
@@ -573,6 +583,8 @@ export default {
     // Track per-purchase-option confirm loading
     const confirmingOptionIds = reactive(new Set())
     const isConfirming = (purchaseOptionId) => confirmingOptionIds.has(purchaseOptionId)
+
+    const showPageHeaders = SHOW_PAGE_HEADERS
 
     const mutatePurchaseOption = (itemId, optionId, mutator) => {
       const catalogItem = catalogStore.findItem(itemId)
@@ -1053,6 +1065,7 @@ export default {
       // Constants
       SUPPORTED_STORES,
       SUPPORTED_UNITS,
+      showPageHeaders,
 
       // Computed
       isAddPurchaseOptionFormValid,
@@ -1104,22 +1117,12 @@ export default {
   padding: 2rem;
 }
 
-.catalog-header {
-  text-align: center;
-  margin-bottom: 2rem;
+.store-catalog-container.page-container-with-header {
+  padding-top: 3rem;
 }
 
-.catalog-header h1 {
-  color: var(--primary-color);
-  margin: 0 0 0.5rem 0;
-  font-size: 2.5rem;
-  font-weight: 600;
-}
-
-.catalog-header p {
-  color: var(--secondary-color);
-  margin: 0;
-  font-size: 1.1rem;
+.store-catalog-container.page-container-no-header {
+  padding-top: 2rem;
 }
 
 .search-filter-section {
@@ -1860,9 +1863,13 @@ select.form-input {
   .store-catalog-container {
     padding: 1rem;
   }
-  
-  .catalog-header h1 {
-    font-size: 2rem;
+
+  .store-catalog-container.page-container-with-header {
+    padding-top: 2rem;
+  }
+
+  .store-catalog-container.page-container-no-header {
+    padding-top: 1rem;
   }
   
   .search-filter-section {

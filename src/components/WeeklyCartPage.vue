@@ -1,44 +1,54 @@
 <template>
-  <div class="weekly-cart-page">
+  <div
+    :class="[
+      'weekly-cart-page',
+      showPageHeaders ? 'page-container-with-header' : 'page-container-no-header'
+    ]"
+  >
     <!-- Header Section -->
-    <div class="page-header">
-      <h1>Weekly Cart</h1>
-      <p>View and manage your weekly menus. Each week has its own cart that's created automatically.</p>
+    <div v-if="showPageHeaders" class="page-header-block">
+      <div class="page-header-text">
+        <h1 class="page-header-title">Weekly Cart</h1>
+        <p class="page-header-description">
+          View and manage your weekly menus. Each week has its own cart that's created automatically.
+        </p>
+      </div>
     </div>
 
     <!-- Week Navigation -->
     <div class="week-navigation">
       <button @click="goToPreviousWeek" class="nav-btn" :disabled="isLoading">
-        <i class="arrow">←</i> Previous Week
+        <i class="arrow">←</i> Back
       </button>
-      
-      <div class="week-display">
-        <h2>{{ formatWeekRange(currentWeekStart) }}</h2>
-        <button @click="goToCurrentWeek" class="current-week-btn" :disabled="isLoading">
-          Go to Current Week
-        </button>
-        <button
-          @click="refreshWeeklyCartBundle"
-          class="secondary-btn refresh-btn"
-          :disabled="isLoading || isLoadingIngredients"
-        >
-          Refresh
-        </button>
-        <div class="goto-date">
-          <input
-            type="date"
-            v-model="goToDateValue"
-            :disabled="isLoading"
-            class="date-input"
-          />
-          <button @click="goToSelectedDate" class="current-week-btn" :disabled="isLoading || !goToDateValue">
-            Go To Date
-          </button>
-        </div>
+      <span class="nav-edge-spacer" aria-hidden="true"></span>
+      <h2 class="week-range">{{ formatWeekRange(currentWeekStart) }}</h2>
+      <button
+        @click="refreshWeeklyCartBundle"
+        class="secondary-btn refresh-btn"
+        :disabled="isLoading || isLoadingIngredients"
+      >
+        Refresh
+      </button>
+      <span class="nav-spacer" aria-hidden="true"></span>
+      <button @click="goToCurrentWeek" class="current-week-btn today-btn" :disabled="isLoading">
+        <svg class="today-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M7 2a1 1 0 0 1 1 1v1h8V3a1 1 0 1 1 2 0v1h1.5A2.5 2.5 0 0 1 22 6.5v13A2.5 2.5 0 0 1 19.5 22h-15A2.5 2.5 0 0 1 2 19.5v-13A2.5 2.5 0 0 1 4.5 4H6V3a1 1 0 0 1 1-1Zm12.5 8h-15v9.5a.5.5 0 0 0 .5.5h15a.5.5 0 0 0 .5-.5V10Zm0-2V6.5a.5.5 0 0 0-.5-.5H18v1a1 1 0 1 1-2 0V6H8v1a1 1 0 1 1-2 0V6H4.5a.5.5 0 0 0-.5.5V8h15.5Z"/>
+          <path d="M8 13.25a1 1 0 0 1 1-1h6a1 1 0 1 1 0 2H9a1 1 0 0 1-1-1Z"/>
+        </svg>
+        <span class="today-label">Today</span>
+      </button>
+      <div class="goto-date joined-control">
+        <input
+          type="date"
+          v-model="goToDateValue"
+          :disabled="isLoading"
+          @change="goToSelectedDate"
+          class="date-input joined-input"
+        />
       </div>
-      
+      <span class="nav-edge-spacer" aria-hidden="true"></span>
       <button @click="goToNextWeek" class="nav-btn" :disabled="isLoading">
-        Next Week <i class="arrow">→</i>
+        Next <i class="arrow">→</i>
       </button>
     </div>
 
@@ -219,6 +229,7 @@ import { weeklyCartStore, weeklyCartState } from '../stores/weeklyCartStore.js'
 import { menuCollectionService } from '../services/menuCollectionService.js'
 import { authState } from '../stores/authStore.js'
 import { fetchCartCost, fetchMenuCost, formatCost } from '../utils/costUtils.js'
+import { SHOW_PAGE_HEADERS } from '../constants/uiConfig.js'
 
 export default {
   name: 'WeeklyCartPage',
@@ -230,6 +241,7 @@ export default {
     const isLoadingIngredients = ref(false)
     const sortedIngredients = ref([])
     const isAddingMenu = ref(false)
+    const showPageHeaders = SHOW_PAGE_HEADERS
     
     // Use store state for cart data
     const isLoading = computed(() => {
@@ -916,7 +928,9 @@ export default {
     }
 
     const goToCurrentWeek = () => {
-      currentWeekStart.value = weeklyCartService.getWeekStart(new Date())
+      const today = new Date()
+      currentWeekStart.value = weeklyCartService.getWeekStart(today)
+      goToDateValue.value = weeklyCartService.formatDate(today)
       // Watcher will handle loadWeekData()
     }
 
@@ -1066,6 +1080,7 @@ export default {
       sortedIngredients,
       isLoadingIngredients,
       isAddingMenu,
+      showPageHeaders,
       cartCost,
       cartCostLoading,
       cartCostError,
@@ -1120,30 +1135,23 @@ export default {
   padding: 2rem;
 }
 
-.page-header {
-  text-align: center;
-  margin-bottom: 2rem;
+.weekly-cart-page.page-container-with-header {
+  padding-top: 3rem;
 }
 
-.page-header h1 {
-  color: var(--primary-color);
-  font-size: 2.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.page-header p {
-  color: var(--secondary-color);
-  font-size: 1.1rem;
+.weekly-cart-page.page-container-no-header {
+  padding-top: 2rem;
 }
 
 .week-navigation {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
-  padding: 1rem;
+  gap: 0.75rem;
+  margin-bottom: 0;
+  padding: 0.75rem;
   background: var(--primary-light);
-  border-radius: 12px;
+  border-radius: 12px 12px 0 0;
+  flex-wrap: nowrap;
 }
 
 .nav-btn {
@@ -1170,18 +1178,21 @@ export default {
   cursor: not-allowed;
 }
 
-.week-display {
-  text-align: center;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  justify-content: center;
+.week-range {
+  color: var(--primary-color);
+  margin: 0;
+  font-size: 1.5rem;
+  white-space: nowrap;
 }
 
-.week-display h2 {
-  color: var(--primary-color);
-  margin: 0 0 0.5rem 0;
-  font-size: 1.5rem;
+.nav-spacer {
+  flex: 2;
+  min-width: 2rem;
+}
+
+.nav-edge-spacer {
+  flex: 1;
+  min-width: 1rem;
 }
 
 .goto-date {
@@ -1197,6 +1208,20 @@ export default {
   background: #fff;
 }
 
+.joined-control {
+  gap: 0;
+  background: #fff;
+  border: 1px solid #cfd8dc;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.joined-input {
+  border: none;
+  border-radius: 0;
+}
+
+
 .current-week-btn {
   background: var(--secondary-color);
   color: white;
@@ -1206,6 +1231,55 @@ export default {
   cursor: pointer;
   font-size: 0.9rem;
   transition: all 0.3s ease;
+}
+
+.week-navigation .nav-btn,
+.week-navigation .current-week-btn,
+.week-navigation .joined-control,
+.week-navigation .joined-input {
+  height: 40px;
+}
+
+.week-navigation .nav-btn,
+.week-navigation .current-week-btn {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.week-navigation .joined-input {
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 1;
+  font-size: 1rem;
+}
+
+.week-navigation .joined-control {
+  display: inline-flex;
+}
+
+.joined-control .current-week-btn.joined-button {
+  border-radius: 0 8px 8px 0;
+}
+
+.today-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  padding: 0.25rem 0.75rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.today-icon {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.today-label {
+  font-size: 0.8rem;
 }
 
 .current-week-btn:hover:not(:disabled) {
@@ -1260,10 +1334,11 @@ export default {
 
 .week-grid {
   background: white;
-  border-radius: 12px;
+  border-radius: 0 0 12px 12px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
   overflow: hidden;
   margin-bottom: 2rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .day-headers {
@@ -1274,10 +1349,10 @@ export default {
 }
 
 .day-header {
-  padding: 1rem;
+  padding: 0.4rem 0.5rem;
   text-align: center;
   font-weight: 600;
-  font-size: 1.1rem;
+  font-size: 1rem;
 }
 
 .extra-day {
@@ -1942,9 +2017,26 @@ export default {
     padding: 1rem;
   }
 
+  .weekly-cart-page.page-container-with-header {
+    padding-top: 2rem;
+  }
+
+  .weekly-cart-page.page-container-no-header {
+    padding-top: 1rem;
+  }
+
   .week-navigation {
-    flex-direction: column;
-    gap: 1rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+
+  .nav-spacer {
+    display: none;
+  }
+
+  .nav-edge-spacer {
+    display: none;
   }
 
   .nav-btn {

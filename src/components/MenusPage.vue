@@ -1,5 +1,10 @@
 <template>
-  <div class="menus-page">
+  <div
+    :class="[
+      'menus-page',
+      showPageHeaders ? 'page-container-with-header' : 'page-container-no-header'
+    ]"
+  >
     <!-- Loading State -->
     <div v-if="isLoading" class="loading-container">
       <div class="loading-spinner"></div>
@@ -19,9 +24,11 @@
     <div v-else class="menus-content">
       <!-- Search Section -->
       <div class="search-section">
-        <div class="search-header">
-          <h2>Search Menus</h2>
-          <p>Browse menus from other users or search by date</p>
+        <div v-if="showPageHeaders" class="page-header-block">
+          <div class="page-header-text">
+            <h2 class="page-header-title">Search Menus</h2>
+            <p class="page-header-description">Browse menus from other users or search by date</p>
+          </div>
         </div>
 
         <!-- Combined Search Bar -->
@@ -126,13 +133,15 @@
       <!-- My Menus Section -->
       <div class="my-menus-section">
         <!-- Page Header -->
-        <div class="page-header">
-          <div class="page-header-actions">
-            <h1 class="header-text-left">My Menus</h1>
+        <div v-if="showPageHeaders" class="page-header-block">
+          <div class="page-header-row">
+            <div class="page-header-text">
+              <h1 class="page-header-title">My Menus</h1>
+              <p class="page-header-description">View and manage historical menus</p>
+            </div>
             <button @click="showCreateModal = true" class="create-menu-btn">
               Create New Menu
             </button>
-            <span class="header-text-right">View and manage historical menus</span>
           </div>
         </div>
 
@@ -230,6 +239,7 @@ import { weeklyCartStore } from '../stores/weeklyCartStore.js'
 import { authStore } from '../stores/authStore.js'
 import { authService } from '../services/authService.js'
 import { menusStore, menusState } from '../stores/menusStore.js'
+import { SHOW_PAGE_HEADERS } from '../constants/uiConfig.js'
 
 export default {
   name: 'MenusPage',
@@ -261,6 +271,8 @@ export default {
       date: ''
     })
     const formErrors = reactive({})
+
+    const showPageHeaders = SHOW_PAGE_HEADERS
     
     // Computed properties
     const currentUser = computed(() => authStore.user)
@@ -593,6 +605,7 @@ export default {
       newMenu,
       formErrors,
       currentUser,
+      showPageHeaders,
       
       // Search state
       usersList,
@@ -626,6 +639,14 @@ export default {
   max-width: 1200px;
   margin: 0 auto;
   padding: 2rem;
+}
+
+.menus-page.page-container-with-header {
+  padding-top: 3rem;
+}
+
+.menus-page.page-container-no-header {
+  padding-top: 2rem;
 }
 
 /* Loading and Error States */
@@ -680,41 +701,6 @@ export default {
   border-radius: 6px;
   cursor: pointer;
   margin-top: 1rem;
-}
-
-/* Page Header */
-.page-header {
-  text-align: center;
-  margin-bottom: 3rem;
-  padding-bottom: 2rem;
-  border-bottom: 2px solid var(--primary-light);
-}
-
-.page-header-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-evenly;
-  gap: 2rem;
-}
-
-.page-header-actions h1 {
-  color: var(--primary-color);
-  margin: 0;
-  font-size: 2.5rem;
-  text-align: center;
-  flex: 1;
-}
-
-.header-text-left,
-.header-text-right {
-  color: var(--secondary-color);
-  font-size: 1.2rem;
-  flex: 1;
-  text-align: center;
-}
-
-.header-text-right {
-  text-align: center;
 }
 
 .create-menu-btn, .create-first-menu-btn {
@@ -1035,23 +1021,13 @@ export default {
   .menus-page {
     padding: 1rem;
   }
-  
-  .page-header-actions {
-    flex-direction: column;
-    gap: 1rem;
+
+  .menus-page.page-container-with-header {
+    padding-top: 2rem;
   }
-  
-  .page-header-actions h1 {
-    font-size: 2rem;
-    text-align: center;
-    flex: none;
-  }
-  
-  .header-text-left,
-  .header-text-right {
-    text-align: center;
-    font-size: 1rem;
-    flex: none;
+
+  .menus-page.page-container-no-header {
+    padding-top: 1rem;
   }
   
   .menus-list {
@@ -1097,32 +1073,13 @@ export default {
 
 /* Search Section */
 .search-section {
-  margin-top: 1rem;
+  margin-top: 0;
   margin-bottom: 5rem;
 }
 
 /* My Menus Section */
 .my-menus-section {
   margin-top: 2rem;
-}
-
-.search-header {
-  text-align: center;
-  margin-bottom: 2rem;
-  padding-bottom: 1rem;
-  border-bottom: 2px solid var(--primary-light);
-}
-
-.search-header h2 {
-  color: var(--primary-color);
-  margin: 0 0 1rem 0;
-  font-size: 2.5rem;
-}
-
-.search-header p {
-  color: var(--secondary-color);
-  margin: 0 0 1rem 0;
-  font-size: 1.2rem;
 }
 
 .search-card {
