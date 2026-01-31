@@ -115,42 +115,28 @@
       
       <div class="pagination-controls">
         <button 
-          @click="goToFirstPage" 
-          :disabled="!hasPreviousPage"
-          class="pagination-btn"
-          title="First page"
-        >
-          ⏮️
-        </button>
-        
-        <button 
           @click="previousPage" 
           :disabled="!hasPreviousPage"
           class="pagination-btn"
           title="Previous page"
         >
-          ◀️
+          <svg class="pagination-nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M15.5 5.5a1 1 0 0 1 0 1.4L10.4 12l5.1 5.1a1 1 0 1 1-1.4 1.4l-5.8-5.8a1 1 0 0 1 0-1.4l5.8-5.8a1 1 0 0 1 1.4 0Z"/>
+          </svg>
+          <span class="pagination-nav-label">Prev</span>
         </button>
         
         <div class="page-numbers">
-          <button
-            v-for="page in Math.min(5, totalPagesComputed)"
-            :key="page"
-            @click="goToPage(page)"
-            :class="['page-btn', { active: currentPage === page }]"
-          >
-            {{ page }}
-          </button>
-          
-          <span v-if="totalPagesComputed > 5" class="page-ellipsis">...</span>
-          
-          <button
-            v-if="totalPagesComputed > 5 && currentPage < totalPagesComputed - 2"
-            @click="goToPage(totalPagesComputed)"
-            :class="['page-btn', { active: currentPage === totalPagesComputed }]"
-          >
-            {{ totalPagesComputed }}
-          </button>
+          <template v-for="page in visiblePages" :key="page.key">
+            <button
+              v-if="page.type === 'page'"
+              @click="goToPage(page.value)"
+              :class="['page-btn', { active: currentPage === page.value }]"
+            >
+              {{ page.value }}
+            </button>
+            <span v-else class="page-ellipsis">...</span>
+          </template>
         </div>
         
         <button 
@@ -159,17 +145,12 @@
           class="pagination-btn"
           title="Next page"
         >
-          ▶️
+          <svg class="pagination-nav-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M8.5 5.5a1 1 0 0 1 1.4 0l5.8 5.8a1 1 0 0 1 0 1.4l-5.8 5.8a1 1 0 1 1-1.4-1.4l5.1-5.1-5.1-5.1a1 1 0 0 1 0-1.4Z"/>
+          </svg>
+          <span class="pagination-nav-label">Next</span>
         </button>
         
-        <button 
-          @click="goToLastPage" 
-          :disabled="!hasNextPage"
-          class="pagination-btn"
-          title="Last page"
-        >
-          ⏭️
-        </button>
       </div>
     </div>
 
@@ -518,7 +499,7 @@
 </template>
 
 <script>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { storeCatalogService } from '../services/storeCatalogService.js'
 import { SUPPORTED_STORES, SUPPORTED_UNITS } from '../constants/storeCatalogConstants.js'
 import { catalogStore, catalogState } from '../stores/catalogStore.js'
@@ -677,6 +658,62 @@ export default {
       return Math.ceil(filteredItems.value.length / itemsPerPage.value)
     })
 
+    const visiblePages = computed(() => {
+      const total = totalPagesComputed.value
+      const current = currentPage.value
+
+      if (total <= 1) {
+        return [{ type: 'page', value: 1, key: 'page-1' }]
+      }
+
+      const pages = []
+      const addPage = (value) => {
+        pages.push({ type: 'page', value, key: `page-${value}` })
+      }
+      const addEllipsis = (key) => {
+        if (pages.length === 0 || pages[pages.length - 1].type === 'ellipsis') {
+          return
+        }
+        pages.push({ type: 'ellipsis', key })
+      }
+
+      addPage(1)
+
+      if (total <= 5) {
+        for (let page = 2; page <= total; page += 1) {
+          addPage(page)
+        }
+        return pages
+      }
+
+      let start = Math.max(2, current - 1)
+      let end = Math.min(total - 1, current + 1)
+
+      if (current <= 3) {
+        start = 2
+        end = 4
+      } else if (current >= total - 2) {
+        start = total - 3
+        end = total - 1
+      }
+
+      if (start > 2) {
+        addEllipsis('ellipsis-start')
+      }
+
+      for (let page = start; page <= end; page += 1) {
+        addPage(page)
+      }
+
+      if (end < total - 1) {
+        addEllipsis('ellipsis-end')
+      }
+
+      addPage(total)
+
+      return pages
+    })
+
     const hasNextPage = computed(() => {
       return currentPage.value < totalPagesComputed.value
     })
@@ -730,6 +767,20 @@ export default {
 
     const goToLastPage = () => {
       currentPage.value = totalPagesComputed.value
+    }
+
+    const preserveScrollFromBottom = () => {
+      const scrollEl = document.documentElement
+      const beforeScrollHeight = scrollEl.scrollHeight
+      const beforeScrollTop = scrollEl.scrollTop
+      const beforeClientHeight = scrollEl.clientHeight
+      const beforeBottomOffset = beforeScrollHeight - (beforeScrollTop + beforeClientHeight)
+
+      nextTick(() => {
+        const afterScrollHeight = scrollEl.scrollHeight
+        const newScrollTop = Math.max(0, afterScrollHeight - beforeBottomOffset - beforeClientHeight)
+        window.scrollTo(0, newScrollTop)
+      })
     }
 
     const filterItems = () => {
@@ -1013,6 +1064,10 @@ export default {
       }
     }, { immediate: true })
 
+    watch(currentPage, () => {
+      preserveScrollFromBottom()
+    })
+
     // Lifecycle
     onMounted(() => {
       // Ensure items are loaded (will only load if not already loaded)
@@ -1072,6 +1127,7 @@ export default {
       isEditPurchaseOptionFormValid,
       paginatedItems,
       totalPagesComputed,
+      visiblePages,
       hasNextPage,
       hasPreviousPage,
       paginationInfo,
@@ -1225,16 +1281,19 @@ export default {
   background: var(--white);
   border: 2px solid var(--border-color);
   color: var(--text-primary);
-  padding: 0.5rem;
-  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s ease;
-  font-size: 1rem;
-  min-width: 40px;
-  height: 40px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  min-width: 72px;
+  height: 48px;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-direction: column;
+  gap: 0.2rem;
 }
 
 .pagination-btn:hover:not(:disabled) {
@@ -1250,11 +1309,23 @@ export default {
   transform: none;
 }
 
+.pagination-nav-icon {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.pagination-nav-label {
+  line-height: 1;
+}
+
 .page-numbers {
   display: flex;
   align-items: center;
   gap: 0.25rem;
   margin: 0 0.5rem;
+  width: calc(7 * 36px + 6 * 0.25rem);
+  justify-content: center;
 }
 
 .page-btn {
@@ -1290,7 +1361,8 @@ export default {
 .page-ellipsis {
   color: var(--text-secondary);
   font-weight: 500;
-  padding: 0 0.5rem;
+  width: 36px;
+  text-align: center;
 }
 
 .loading-container {
