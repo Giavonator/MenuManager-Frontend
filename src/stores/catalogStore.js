@@ -7,6 +7,28 @@
 import { reactive, computed } from 'vue'
 import { storeCatalogService } from '../services/storeCatalogService.js'
 
+const STORAGE_KEY = 'menumanager_catalog_store'
+
+const loadFromSession = () => {
+  if (typeof sessionStorage === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch (error) {
+    console.warn('[CatalogStore] Failed to read session storage:', error)
+    return null
+  }
+}
+
+const saveToSession = (payload) => {
+  if (typeof sessionStorage === 'undefined') return
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  } catch (error) {
+    console.warn('[CatalogStore] Failed to write session storage:', error)
+  }
+}
+
 // Reactive state
 const state = reactive({
   items: [],
@@ -18,7 +40,22 @@ const state = reactive({
 
 class CatalogStore {
   constructor() {
-    // No initialization from storage needed - session-only cache
+    const cached = loadFromSession()
+    if (cached && typeof cached === 'object') {
+      state.items = Array.isArray(cached.items) ? cached.items : []
+      state.loadedAt = typeof cached.loadedAt === 'number' ? cached.loadedAt : null
+      state.isLoaded = !!cached.isLoaded
+      state.error = cached.error || null
+    }
+  }
+
+  persistState() {
+    saveToSession({
+      items: state.items,
+      loadedAt: state.loadedAt,
+      isLoaded: state.isLoaded,
+      error: state.error
+    })
   }
 
   /**
@@ -120,10 +157,12 @@ class CatalogStore {
       state.items = itemsWithDetails.filter(item => item !== null)
       state.loadedAt = Date.now()
       state.isLoaded = true
+      this.persistState()
       console.log('[CatalogStore] items set:', state.items)
     } catch (error) {
       console.error('Error loading items:', error)
       this.setError(error.message || 'Failed to load items')
+      this.persistState()
       throw error
     } finally {
       console.log('[CatalogStore] loadItems:finish')
@@ -156,6 +195,7 @@ class CatalogStore {
     state.loadedAt = null
     state.isLoaded = false
     state.error = null
+    this.persistState()
   }
 
   /**
@@ -163,6 +203,7 @@ class CatalogStore {
    */
   addItem(item) {
     state.items.unshift(item)
+    this.persistState()
   }
 
   /**
@@ -172,6 +213,7 @@ class CatalogStore {
     const item = state.items.find(i => i.id === itemId)
     if (item) {
       Object.assign(item, updates)
+      this.persistState()
     }
   }
 
@@ -182,6 +224,7 @@ class CatalogStore {
     const item = state.items.find(i => i.id === itemId)
     if (item) {
       item.name = name
+      this.persistState()
     }
   }
 
@@ -190,6 +233,7 @@ class CatalogStore {
    */
   removeItem(itemId) {
     state.items = state.items.filter(item => item.id !== itemId)
+    this.persistState()
   }
 
   /**
@@ -199,6 +243,7 @@ class CatalogStore {
     const item = state.items.find(i => i.id === itemId)
     if (item) {
       item.purchaseOptions.unshift(option)
+      this.persistState()
     }
   }
 
@@ -211,6 +256,7 @@ class CatalogStore {
       const option = item.purchaseOptions.find(po => po.id === optionId)
       if (option) {
         Object.assign(option, updates)
+        this.persistState()
       }
     }
   }
@@ -222,6 +268,7 @@ class CatalogStore {
     const item = state.items.find(i => i.id === itemId)
     if (item) {
       item.purchaseOptions = item.purchaseOptions.filter(po => po.id !== optionId)
+      this.persistState()
     }
   }
 

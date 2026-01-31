@@ -9,6 +9,28 @@ import { menuCollectionService } from '../services/menuCollectionService.js'
 import { cookBookService } from '../services/cookBookService.js'
 import { menusStore } from './menusStore.js'
 
+const STORAGE_KEY = 'menumanager_menu_detail_store'
+
+const loadFromSession = () => {
+  if (typeof sessionStorage === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch (error) {
+    console.warn('[MenuDetailStore] Failed to read session storage:', error)
+    return null
+  }
+}
+
+const saveToSession = (payload) => {
+  if (typeof sessionStorage === 'undefined') return
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  } catch (error) {
+    console.warn('[MenuDetailStore] Failed to write session storage:', error)
+  }
+}
+
 // Reactive state
 const state = reactive({
   menus: {}, // menuId -> menu data
@@ -19,7 +41,20 @@ const state = reactive({
 
 class MenuDetailStore {
   constructor() {
-    // No initialization from storage needed - session-only cache
+    const cached = loadFromSession()
+    if (cached && typeof cached === 'object') {
+      state.menus = cached.menus && typeof cached.menus === 'object' ? cached.menus : {}
+      state.loadedAt = cached.loadedAt && typeof cached.loadedAt === 'object' ? cached.loadedAt : {}
+      state.errors = cached.errors && typeof cached.errors === 'object' ? cached.errors : {}
+    }
+  }
+
+  persistState() {
+    saveToSession({
+      menus: state.menus,
+      loadedAt: state.loadedAt,
+      errors: state.errors
+    })
   }
 
   /**
@@ -198,10 +233,12 @@ class MenuDetailStore {
       console.log('[MenuDetailStore] State menus keys:', Object.keys(state.menus))
       console.log('[MenuDetailStore] State menus[menuId]:', state.menus[menuId])
       console.log(`[MenuDetailStore] loadMenu - isLoaded(${menuId}) now returns: ${this.isLoaded(menuId)}`)
+      this.persistState()
     } catch (error) {
       console.error('[MenuDetailStore] Error loading menu:', error)
       console.error(`[MenuDetailStore] loadMenu ERROR - menuId: ${menuId}, error:`, error)
       this.setError(menuId, error.message || 'Failed to load menu')
+      this.persistState()
       console.log(`[MenuDetailStore] loadMenu ERROR - After setError, state.errors[${menuId}]: ${state.errors[menuId]}`)
       // Don't delete cache on error - let it be overwritten on retry
       throw error
@@ -258,6 +295,8 @@ class MenuDetailStore {
     console.log(`[MenuDetailStore] refreshMenu - Before clear, state.menus[${menuId}] exists: ${!!state.menus[menuId]}`)
     // Clear existing cache
     delete state.menus[menuId]
+    delete state.loadedAt[menuId]
+    delete state.errors[menuId]
     console.log(`[MenuDetailStore] refreshMenu - After delete, state.menus[${menuId}] exists: ${!!state.menus[menuId]}`)
     this.setLoading(menuId, false)
     this.clearError(menuId)
@@ -302,6 +341,7 @@ class MenuDetailStore {
       Object.assign(menu.menuDetails, updates)
       menu.loadedAt = Date.now()
       state.loadedAt[menuId] = Date.now()
+      this.persistState()
     }
   }
 
@@ -343,6 +383,7 @@ class MenuDetailStore {
     menu.recipes.push(newRecipe)
     menu.loadedAt = Date.now()
     state.loadedAt[menuId] = Date.now()
+    this.persistState()
   }
 
   /**
@@ -354,6 +395,7 @@ class MenuDetailStore {
       menu.recipes = menu.recipes.filter(recipe => recipe.id !== recipeId)
       menu.loadedAt = Date.now()
       state.loadedAt[menuId] = Date.now()
+      this.persistState()
     }
   }
 
@@ -368,6 +410,7 @@ class MenuDetailStore {
         recipe.scalingFactor = scalingFactor
         menu.loadedAt = Date.now()
         state.loadedAt[menuId] = Date.now()
+        this.persistState()
       }
     }
   }
@@ -383,6 +426,7 @@ class MenuDetailStore {
         Object.assign(recipe, updates)
         menu.loadedAt = Date.now()
         state.loadedAt[menuId] = Date.now()
+        this.persistState()
       }
     }
   }
@@ -398,6 +442,7 @@ class MenuDetailStore {
         recipe.ingredients = ingredients
         menu.loadedAt = Date.now()
         state.loadedAt[menuId] = Date.now()
+        this.persistState()
       }
     }
   }
@@ -414,6 +459,7 @@ class MenuDetailStore {
     delete state.loadedAt[menuId]
     console.log(`[MenuDetailStore] clearMenu - After clear, state.menus[${menuId}] exists: ${!!state.menus[menuId]}`)
     console.log(`[MenuDetailStore] clearMenu - state.menus keys after clear: [${Object.keys(state.menus).join(', ')}]`)
+    this.persistState()
   }
 
   /**
@@ -427,6 +473,7 @@ class MenuDetailStore {
     state.errors = {}
     state.loadedAt = {}
     console.log(`[MenuDetailStore] clearCache - After clear, state.menus keys: [${Object.keys(state.menus).join(', ')}]`)
+    this.persistState()
   }
 
   // Getters

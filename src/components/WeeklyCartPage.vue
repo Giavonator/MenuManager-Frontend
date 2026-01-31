@@ -1705,7 +1705,7 @@ export default {
 .ingredients-header p {
   margin: 0.25rem 0 0 0;
   opacity: 0.9;
-  font-size: 0.9rem;
+  font-size: 1.1rem;
 }
 
 .header-title,

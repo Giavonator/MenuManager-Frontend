@@ -155,7 +155,7 @@ export default {
   margin: 0;
   font-size: 1.75rem;
   font-weight: 600;
-  color: var(--french-blue-contrast);
+  color: var(--white);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
@@ -174,7 +174,7 @@ export default {
   font-weight: 500;
   font-size: 1.2rem;
   opacity: 0.9;
-  color: var(--french-red);
+  color: var(--white);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 

@@ -8,6 +8,28 @@ import { reactive, computed } from 'vue'
 import { menuCollectionService } from '../services/menuCollectionService.js'
 import { authService } from '../services/authService.js'
 
+const STORAGE_KEY = 'menumanager_menus_store'
+
+const loadFromSession = () => {
+  if (typeof sessionStorage === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch (error) {
+    console.warn('[MenusStore] Failed to read session storage:', error)
+    return null
+  }
+}
+
+const saveToSession = (payload) => {
+  if (typeof sessionStorage === 'undefined') return
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  } catch (error) {
+    console.warn('[MenusStore] Failed to write session storage:', error)
+  }
+}
+
 // Reactive state
 const state = reactive({
   menus: [],
@@ -25,7 +47,34 @@ const state = reactive({
 
 class MenusStore {
   constructor() {
-    // No initialization from storage needed - session-only cache
+    const cached = loadFromSession()
+    if (cached && typeof cached === 'object') {
+      state.menus = Array.isArray(cached.menus) ? cached.menus : []
+      state.usersList = Array.isArray(cached.usersList) ? cached.usersList : []
+      state.ownerUsernames = cached.ownerUsernames && typeof cached.ownerUsernames === 'object'
+        ? cached.ownerUsernames
+        : {}
+      state.loadedAt = typeof cached.loadedAt === 'number' ? cached.loadedAt : null
+      state.isLoaded = !!cached.isLoaded
+      state.usersLoadedAt = typeof cached.usersLoadedAt === 'number' ? cached.usersLoadedAt : null
+      state.isUsersLoaded = !!cached.isUsersLoaded
+      state.currentUserId = cached.currentUserId || null
+      state.error = cached.error || null
+    }
+  }
+
+  persistState() {
+    saveToSession({
+      menus: state.menus,
+      usersList: state.usersList,
+      ownerUsernames: state.ownerUsernames,
+      loadedAt: state.loadedAt,
+      isLoaded: state.isLoaded,
+      usersLoadedAt: state.usersLoadedAt,
+      isUsersLoaded: state.isUsersLoaded,
+      currentUserId: state.currentUserId,
+      error: state.error
+    })
   }
 
   /**
@@ -140,10 +189,12 @@ class MenusStore {
       state.loadedAt = Date.now()
       state.isLoaded = true
       state.currentUserId = userId
+      this.persistState()
       console.log('[MenusStore] loadMenus:finish')
     } catch (error) {
       console.error('[MenusStore] Error loading menus:', error)
       this.setError(error.message || 'Failed to load menus')
+      this.persistState()
       throw error
     } finally {
       this.setLoading(false)
@@ -270,11 +321,13 @@ class MenusStore {
 
       state.usersLoadedAt = Date.now()
       state.isUsersLoaded = true
+      this.persistState()
       console.log('[MenusStore] loadUsers:finish')
     } catch (error) {
       console.error('[MenusStore] Error loading users:', error)
       this.setError(error.message || 'Failed to load users')
       state.usersList = []
+      this.persistState()
       throw error
     } finally {
       this.setLoadingUsers(false)
@@ -318,6 +371,7 @@ class MenusStore {
       })
 
       await Promise.all(usernamePromises)
+      this.persistState()
     }
   }
 
@@ -333,10 +387,12 @@ class MenusStore {
     try {
       const username = await authService.getUsername(ownerId)
       state.ownerUsernames[ownerId] = username
+      this.persistState()
       return username
     } catch (err) {
       console.error(`[MenusStore] Error fetching username for ${ownerId}:`, err)
       state.ownerUsernames[ownerId] = ownerId // Fallback to ID
+      this.persistState()
       return ownerId
     }
   }
@@ -354,6 +410,7 @@ class MenusStore {
     state.isUsersLoaded = false
     state.currentUserId = null
     state.error = null
+    this.persistState()
   }
 
   /**
@@ -365,6 +422,7 @@ class MenusStore {
       state.isLoaded = false
       state.loadedAt = null
       state.currentUserId = null
+      this.persistState()
     }
   }
 
@@ -379,6 +437,7 @@ class MenusStore {
     if (menu.owner && !state.ownerUsernames[menu.owner]) {
       this.getUsername(menu.owner)
     }
+    this.persistState()
   }
 
   /**
@@ -390,6 +449,7 @@ class MenusStore {
       Object.assign(menu, updates)
       // Re-sort after update
       state.menus.sort((a, b) => new Date(b.date) - new Date(a.date))
+      this.persistState()
     }
   }
 
@@ -398,6 +458,7 @@ class MenusStore {
    */
   removeMenu(menuId) {
     state.menus = state.menus.filter(menu => menu.id !== menuId)
+    this.persistState()
   }
 
   /**
