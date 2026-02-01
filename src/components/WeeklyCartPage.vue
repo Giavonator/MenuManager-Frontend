@@ -127,6 +127,10 @@
         </div>
       </div>
       
+      <div v-if="instacartError" class="instacart-error">
+        <p>{{ instacartError }}</p>
+      </div>
+      
       <div v-if="isLoadingIngredients" class="loading-ingredients">
         <div class="spinner"></div>
         <p>Loading ingredients...</p>
@@ -139,8 +143,17 @@
       
       <div v-else class="ingredients-list">
         <div class="ingredients-summary">
-          <p><strong>Total Ingredients:</strong> {{ ingredientCount }}</p>
-          <p><strong>Total Cost:</strong> {{ formatCost(totalCost) }}</p>
+          <div class="summary-text">
+            <p><strong>Total Ingredients:</strong> {{ ingredientCount }}</p>
+            <p><strong>Total Cost:</strong> {{ formatCost(totalCost) }}</p>
+          </div>
+          <button 
+            @click="exportAllIngredientsToInstacart" 
+            class="instacart-btn instacart-btn-all"
+            :disabled="isExportingToInstacart || weeklyIngredients.length === 0"
+          >
+            🥕 Add all ingredients to Instacart
+          </button>
         </div>
         
         <div class="ingredients-grid">
@@ -150,13 +163,31 @@
               <h4 v-if="!ingredient.isMenuHeader && !ingredient.isStoreHeader">
                 {{ ingredient.name }} <span class="ingredient-cost">{{ formatCost(ingredient.totalCost) }}</span>
               </h4>
-              <h4 v-else-if="ingredient.isStoreHeader">{{ ingredient.name }}</h4>
+              <h4 v-else-if="ingredient.isStoreHeader" class="store-header-title">
+                {{ ingredient.name }}
+                <button 
+                  @click="exportStoreIngredientsToInstacart(ingredient.name)" 
+                  class="instacart-btn instacart-btn-store"
+                  :disabled="isExportingToInstacart"
+                  :title="`Add ${ingredient.name} ingredients to Instacart`"
+                >
+                  🥕 Add store ingredients to Instacart
+                </button>
+              </h4>
               <div v-else-if="ingredient.isMenuHeader" class="menu-header-content">
                 <div class="menu-header-left">
                   <span class="menu-header-day-date">{{ ingredient.dayName }} - {{ ingredient.date }}</span>
                 </div>
                 <div class="menu-header-center">
                   <span class="menu-header-name-owner">{{ ingredient.menuName }} - {{ ingredient.ownerName }}</span>
+                  <button 
+                    @click="exportMenuIngredientsToInstacart(ingredient)" 
+                    class="instacart-btn instacart-btn-menu"
+                    :disabled="isExportingToInstacart"
+                    :title="`Add ${ingredient.menuName} ingredients to Instacart`"
+                  >
+                    🥕 Add menu ingredients to Instacart
+                  </button>
                 </div>
                 <div class="menu-header-right">
                   <span class="menu-header-cost">{{ ingredient.cost }}</span>
@@ -223,6 +254,7 @@ import { menuCollectionService } from '../services/menuCollectionService.js'
 import { authState } from '../stores/authStore.js'
 import { fetchCartCost, fetchMenuCost, formatCost } from '../utils/costUtils.js'
 import { SHOW_PAGE_HEADERS } from '../constants/uiConfig.js'
+import { createShoppingList } from '../services/instacartService.js'
 
 export default {
   name: 'WeeklyCartPage',
@@ -261,6 +293,10 @@ export default {
     // Sorting state (default to combined list)
     const sortByMenu = ref(false)
     const sortByStore = ref(false)
+    
+    // Instacart export state
+    const isExportingToInstacart = ref(false)
+    const instacartError = ref(null)
 
     const UNIT_CONVERSIONS = {
       g: { base: 'g', factor: 1 },
@@ -788,6 +824,7 @@ export default {
               date: dateStr,
               menuName: section.menuName,
               ownerName: ownerLabel,
+              menuId: section.menuId,
               cost: costStr,
               units: '',
               totalQuantity: 0,
@@ -994,6 +1031,151 @@ export default {
       closeConfirmModal()
     }
 
+    // Instacart export methods
+    const exportAllIngredientsToInstacart = async () => {
+      if (isExportingToInstacart.value || weeklyIngredients.value.length === 0) return
+      
+      isExportingToInstacart.value = true
+      instacartError.value = null
+      
+      try {
+        // Filter out header items
+        const ingredientsToExport = weeklyIngredients.value.filter(
+          ing => !ing.isMenuHeader && !ing.isStoreHeader
+        )
+        
+        if (ingredientsToExport.length === 0) {
+          throw new Error('No ingredients available to export')
+        }
+        
+        const weekStartStr = formatDate(currentWeekStart.value)
+        const weekEnd = weeklyCartService.getWeekEnd(new Date(currentWeekStart.value))
+        const weekEndStr = formatDate(weekEnd)
+        const title = `Week of ${weekStartStr} - ${weekEndStr} - Shopping List`
+        
+        const instacartUrl = await createShoppingList(ingredientsToExport, {
+          title,
+          weekStart: weekStartStr
+        })
+        
+        // Open Instacart link in new tab
+        window.open(instacartUrl, '_blank', 'noopener,noreferrer')
+      } catch (error) {
+        console.error('Error exporting to Instacart:', error)
+        instacartError.value = error.message || 'Failed to export to Instacart. Please try again.'
+        // Show error for 5 seconds
+        setTimeout(() => {
+          instacartError.value = null
+        }, 5000)
+      } finally {
+        isExportingToInstacart.value = false
+      }
+    }
+
+    const exportStoreIngredientsToInstacart = async (storeName) => {
+      if (isExportingToInstacart.value || !storeName) return
+      
+      isExportingToInstacart.value = true
+      instacartError.value = null
+      
+      try {
+        // Filter ingredients for this store
+        const ingredientsToExport = weeklyIngredients.value.filter(
+          ing => !ing.isMenuHeader && !ing.isStoreHeader && ing.store === storeName
+        )
+        
+        if (ingredientsToExport.length === 0) {
+          throw new Error(`No ingredients found for ${storeName}`)
+        }
+        
+        const weekStartStr = formatDate(currentWeekStart.value)
+        const weekEnd = weeklyCartService.getWeekEnd(new Date(currentWeekStart.value))
+        const weekEndStr = formatDate(weekEnd)
+        const title = `Week of ${weekStartStr} - ${weekEndStr} - ${storeName} - Shopping List`
+        
+        const instacartUrl = await createShoppingList(ingredientsToExport, {
+          title,
+          weekStart: weekStartStr
+        })
+        
+        // Open Instacart link in new tab
+        window.open(instacartUrl, '_blank', 'noopener,noreferrer')
+      } catch (error) {
+        console.error('Error exporting store to Instacart:', error)
+        instacartError.value = error.message || 'Failed to export to Instacart. Please try again.'
+        // Show error for 5 seconds
+        setTimeout(() => {
+          instacartError.value = null
+        }, 5000)
+      } finally {
+        isExportingToInstacart.value = false
+      }
+    }
+
+    const exportMenuIngredientsToInstacart = async (menuHeader) => {
+      if (isExportingToInstacart.value || !menuHeader) return
+      
+      isExportingToInstacart.value = true
+      instacartError.value = null
+      
+      try {
+        // Find ingredients for this menu from sortedIngredients
+        // Ingredients after the menu header until the next header belong to this menu
+        const menuHeaderIndex = sortedIngredients.value.findIndex(
+          ing => ing.isMenuHeader && 
+                 ing.date === menuHeader.date && 
+                 ing.menuName === menuHeader.menuName
+        )
+        
+        if (menuHeaderIndex === -1) {
+          throw new Error('Menu header not found')
+        }
+        
+        // Collect ingredients until next header
+        const ingredientsToExport = []
+        for (let i = menuHeaderIndex + 1; i < sortedIngredients.value.length; i++) {
+          const ing = sortedIngredients.value[i]
+          if (ing.isMenuHeader || ing.isStoreHeader) {
+            break
+          }
+          // Verify this ingredient belongs to this menu by checking sources
+          // Match by menuId if available, otherwise by date
+          if (ing.sources && ing.sources.some(source => {
+            if (menuHeader.menuId && source.menuId) {
+              return source.menuId === menuHeader.menuId
+            }
+            return source.date === menuHeader.date
+          })) {
+            ingredientsToExport.push(ing)
+          }
+        }
+        
+        if (ingredientsToExport.length === 0) {
+          throw new Error(`No ingredients found for ${menuHeader.menuName}`)
+        }
+        
+        const title = `${menuHeader.date} - ${menuHeader.menuName} - ${menuHeader.ownerName} Shopping List`
+        const weekStartStr = formatDate(currentWeekStart.value)
+        
+        const instacartUrl = await createShoppingList(ingredientsToExport, {
+          title,
+          weekStart: weekStartStr
+        })
+        
+        // Open Instacart link in new tab
+        window.open(instacartUrl, '_blank', 'noopener,noreferrer')
+      } catch (error) {
+        console.error('Error exporting menu to Instacart:', error)
+        instacartError.value = error.message || 'Failed to export to Instacart. Please try again.'
+        // Show error for 5 seconds
+        setTimeout(() => {
+          instacartError.value = null
+        }, 5000)
+      } finally {
+        isExportingToInstacart.value = false
+      }
+    }
+
     // Watch for week changes
     watch(currentWeekStart, () => {
       loadWeekData()
@@ -1025,6 +1207,8 @@ export default {
       confirmModal,
       sortByMenu,
       sortByStore,
+      isExportingToInstacart,
+      instacartError,
       
       // Computed
       dayNames,
@@ -1055,6 +1239,9 @@ export default {
       closeAddMenuModal,
       closeConfirmModal,
       confirmAction,
+      exportAllIngredientsToInstacart,
+      exportStoreIngredientsToInstacart,
+      exportMenuIngredientsToInstacart,
       // expose authState so template can safely read current user
       authState
     }
@@ -1794,6 +1981,14 @@ export default {
   padding: 1rem 1.5rem;
   margin-bottom: 2rem;
   display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+.summary-text {
+  display: flex;
   gap: 2rem;
   flex-wrap: wrap;
 }
@@ -1806,6 +2001,84 @@ export default {
 
 .ingredients-summary strong {
   color: var(--secondary-color);
+}
+
+/* Instacart Export Styles */
+.instacart-error {
+  background: #fee;
+  border: 1px solid #fcc;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  color: #c33;
+}
+
+.instacart-error p {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.instacart-btn {
+  background: #00A862;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.instacart-btn:hover:not(:disabled) {
+  background: #008f52;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 168, 98, 0.3);
+}
+
+.instacart-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.instacart-btn-all {
+  padding: 0.75rem 1.25rem;
+  font-size: 1rem;
+}
+
+.instacart-btn-store {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  margin-left: 1rem;
+}
+
+.instacart-btn-menu {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  margin-left: 1rem;
+}
+
+
+.store-header-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.menu-header-center {
+  flex: 1;
+  text-align: center;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
 }
 
 .ingredients-grid {
