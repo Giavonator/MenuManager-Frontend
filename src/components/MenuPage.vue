@@ -804,14 +804,17 @@ export default {
     
     // Date formatting helper functions
     // Must be defined before watchers that use them (especially with immediate: true)
-    const formatDate = (dateString) => {
-      if (!dateString) return ''
+    const formatDate = (dateValue) => {
+      if (!dateValue) return ''
       
       try {
+        const normalized = dateValue instanceof Date
+          ? dateValue.toISOString()
+          : dateValue
         // Normalize to UTC to avoid timezone shifts
-        const date = dateString.includes('T')
-          ? new Date(dateString)
-          : new Date(`${dateString}T00:00:00Z`)
+        const date = normalized.includes('T')
+          ? new Date(normalized)
+          : new Date(`${normalized}T00:00:00Z`)
 
         const formatted = date.toLocaleDateString('en-US', {
           year: 'numeric',
@@ -821,27 +824,30 @@ export default {
         })
         
         // Debug logging to help verify the fix
-        console.log(`Date formatting: "${dateString}" -> "${formatted}" (${date.toDateString()})`)
+        console.log(`Date formatting: "${normalized}" -> "${formatted}" (${date.toDateString()})`)
         
         return formatted
       } catch (error) {
-        console.error('Error formatting date:', dateString, error)
-        return dateString // Return original string if formatting fails
+        console.error('Error formatting date:', dateValue, error)
+        return dateValue // Return original value if formatting fails
       }
     }
     
-    const formatDateForInput = (dateString) => {
-      if (!dateString) return ''
+    const formatDateForInput = (dateValue) => {
+      if (!dateValue) return ''
       
       try {
+        const normalized = dateValue instanceof Date
+          ? dateValue.toISOString()
+          : dateValue
         // If it's already in YYYY-MM-DD format, return as is
-        if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
-          return dateString
+        if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+          return normalized
         }
         // Normalize to UTC
-        const date = dateString.includes('T')
-          ? new Date(dateString)
-          : new Date(`${dateString}T00:00:00Z`)
+        const date = normalized.includes('T')
+          ? new Date(normalized)
+          : new Date(`${normalized}T00:00:00Z`)
 
         // Format as YYYY-MM-DD in UTC for HTML date input
         const year = date.getUTCFullYear()
@@ -849,12 +855,31 @@ export default {
         const day = date.getUTCDate().toString().padStart(2, '0')
         const formatted = `${year}-${month}-${day}`
         
-        console.log(`Date input formatting: "${dateString}" -> "${formatted}"`)
+        console.log(`Date input formatting: "${normalized}" -> "${formatted}"`)
         
         return formatted
       } catch (error) {
-        console.error('Error formatting date for input:', dateString, error)
-        return dateString // Return original string if formatting fails
+        console.error('Error formatting date for input:', dateValue, error)
+        return dateValue // Return original value if formatting fails
+      }
+    }
+
+    const normalizeMenuDateToYmd = (value) => {
+      if (!value) return ''
+      try {
+        if (value instanceof Date) {
+          return value.toISOString().split('T')[0]
+        }
+        if (typeof value === 'string') {
+          if (value.includes('T')) {
+            return new Date(value).toISOString().split('T')[0]
+          }
+          return value
+        }
+        return ''
+      } catch (error) {
+        console.error('Error normalizing menu date:', value, error)
+        return ''
       }
     }
     
@@ -1258,9 +1283,7 @@ const editingIngredientIndex = ref(null) // Track which ingredient is being edit
         // Menu is automatically removed from weekly cart when deleted (backend synchronization)
         // Invalidate cache so UI reflects the menu removal
         if (menu.value?.date) {
-          const menuDateStr = menu.value.date.includes('T') 
-            ? new Date(menu.value.date).toISOString().split('T')[0] 
-            : menu.value.date
+          const menuDateStr = normalizeMenuDateToYmd(menu.value.date)
           weeklyCartStore.clearWeekMenuMapping(menuDateStr)
         }
         
@@ -1292,13 +1315,13 @@ const editingIngredientIndex = ref(null) // Track which ingredient is being edit
         // Check if date has changed - compare formatted dates
         const currentFormattedDate = formatDateForInput(menu.value.date)
         if (editForm.date !== currentFormattedDate) {
-          // Convert date string to Date object for the API
-          updates.date = new Date(editForm.date)
+          // Send ISO date string to keep cache consistent with backend payloads
+          updates.date = `${editForm.date}T00:00:00.000Z`
           console.log('Date change detected:', {
             original: menu.value.date,
             originalFormatted: currentFormattedDate,
             new: editForm.date,
-            newAsDate: updates.date
+            newAsIso: updates.date
           })
         }
         
@@ -1307,16 +1330,18 @@ const editingIngredientIndex = ref(null) // Track which ingredient is being edit
           await menuCollectionService.updateMenu(props.menuId, updates)
           
           // Update cache
-          menuDetailStore.updateMenu(props.menuId, updates)
+          const cacheUpdates = { ...updates }
+          if (cacheUpdates.date instanceof Date) {
+            cacheUpdates.date = cacheUpdates.date.toISOString()
+          }
+          menuDetailStore.updateMenu(props.menuId, cacheUpdates)
           
           // Menu is automatically moved between weekly carts when date changes (backend synchronization)
           // Invalidate cache for both old and new dates so UI reflects the change
           if (updates.date) {
             // Invalidate old date cache
             if (menu.value?.date) {
-              const oldDateStr = menu.value.date.includes('T') 
-                ? new Date(menu.value.date).toISOString().split('T')[0] 
-                : menu.value.date
+              const oldDateStr = normalizeMenuDateToYmd(menu.value.date)
               weeklyCartStore.clearWeekMenuMapping(oldDateStr)
             }
             // Invalidate new date cache

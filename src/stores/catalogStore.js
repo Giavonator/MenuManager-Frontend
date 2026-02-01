@@ -38,6 +38,13 @@ const state = reactive({
   isLoaded: false
 })
 
+const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true })
+const compareItemNames = (left, right) => {
+  const leftName = left?.name ?? ''
+  const rightName = right?.name ?? ''
+  return collator.compare(leftName, rightName)
+}
+
 class CatalogStore {
   constructor() {
     const cached = loadFromSession()
@@ -46,6 +53,10 @@ class CatalogStore {
       state.loadedAt = typeof cached.loadedAt === 'number' ? cached.loadedAt : null
       state.isLoaded = !!cached.isLoaded
       state.error = cached.error || null
+    }
+
+    if (state.items.length > 1) {
+      state.items.sort(compareItemNames)
     }
   }
 
@@ -155,6 +166,9 @@ class CatalogStore {
       console.log('[CatalogStore] itemsWithDetails:', itemsWithDetails)
 
       state.items = itemsWithDetails.filter(item => item !== null)
+      if (state.items.length > 1) {
+        state.items.sort(compareItemNames)
+      }
       state.loadedAt = Date.now()
       state.isLoaded = true
       this.persistState()
@@ -202,7 +216,12 @@ class CatalogStore {
    * Add a new item to the cache
    */
   addItem(item) {
-    state.items.unshift(item)
+    const insertAt = state.items.findIndex(existing => compareItemNames(item, existing) < 0)
+    if (insertAt === -1) {
+      state.items.push(item)
+    } else {
+      state.items.splice(insertAt, 0, item)
+    }
     this.persistState()
   }
 
@@ -213,6 +232,9 @@ class CatalogStore {
     const item = state.items.find(i => i.id === itemId)
     if (item) {
       Object.assign(item, updates)
+      if (Object.prototype.hasOwnProperty.call(updates, 'name') && state.items.length > 1) {
+        state.items.sort(compareItemNames)
+      }
       this.persistState()
     }
   }
@@ -224,6 +246,9 @@ class CatalogStore {
     const item = state.items.find(i => i.id === itemId)
     if (item) {
       item.name = name
+      if (state.items.length > 1) {
+        state.items.sort(compareItemNames)
+      }
       this.persistState()
     }
   }

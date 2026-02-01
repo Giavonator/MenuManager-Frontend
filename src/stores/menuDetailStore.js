@@ -338,7 +338,11 @@ class MenuDetailStore {
   updateMenu(menuId, updates) {
     const menu = state.menus[menuId]
     if (menu) {
-      Object.assign(menu.menuDetails, updates)
+      const normalizedUpdates = { ...updates }
+      if (normalizedUpdates.date instanceof Date) {
+        normalizedUpdates.date = normalizedUpdates.date.toISOString()
+      }
+      Object.assign(menu.menuDetails, normalizedUpdates)
       menu.loadedAt = Date.now()
       state.loadedAt[menuId] = Date.now()
       this.persistState()

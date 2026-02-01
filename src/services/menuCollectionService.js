@@ -84,6 +84,18 @@ class MenuCollectionService {
   async updateMenu(menu, updates) {
     try {
       const requestBody = { menu, ...updates }
+      let requestBodyJson = null
+      try {
+        requestBodyJson = JSON.stringify(requestBody)
+      } catch (jsonError) {
+        console.warn('[MenuCollectionService] updateMenu requestBody JSON stringify failed', jsonError)
+      }
+      console.log('[MenuCollectionService] updateMenu pre-call', {
+        requestBody,
+        requestBodyJson,
+        requestBodyType: typeof requestBody,
+        isDateField: requestBody?.date instanceof Date
+      })
       const response = await apiClient.post('/api/MenuCollection/updateMenu', requestBody)
       return response.data
     } catch (error) {

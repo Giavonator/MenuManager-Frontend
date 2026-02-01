@@ -446,7 +446,11 @@ class MenusStore {
   updateMenu(menuId, updates) {
     const menu = state.menus.find(m => m.id === menuId)
     if (menu) {
-      Object.assign(menu, updates)
+      const normalizedUpdates = { ...updates }
+      if (normalizedUpdates.date instanceof Date) {
+        normalizedUpdates.date = normalizedUpdates.date.toISOString()
+      }
+      Object.assign(menu, normalizedUpdates)
       // Re-sort after update
       state.menus.sort((a, b) => new Date(b.date) - new Date(a.date))
       this.persistState()
