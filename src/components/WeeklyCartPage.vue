@@ -22,13 +22,6 @@
       </button>
       <span class="nav-edge-spacer" aria-hidden="true"></span>
       <h2 class="week-range">{{ formatWeekRange(currentWeekStart) }}</h2>
-      <button
-        @click="refreshWeeklyCartBundle"
-        class="secondary-btn refresh-btn"
-        :disabled="isLoading || isLoadingIngredients"
-      >
-        Refresh
-      </button>
       <span class="nav-spacer" aria-hidden="true"></span>
       <button @click="goToCurrentWeek" class="current-week-btn today-btn" :disabled="isLoading">
         <svg class="today-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -403,54 +396,6 @@ export default {
       return parseFloat(quantity.toFixed(2))
     }
 
-    const BUNDLE_CACHE_PREFIX = 'weeklyCartBundle'
-
-    const buildBundleCacheKey = (weekStartStr, cartId) => {
-      return `${BUNDLE_CACHE_PREFIX}:${weekStartStr}:${cartId}`
-    }
-
-    const readBundleCache = (weekStartStr, cartId) => {
-      if (!weekStartStr || !cartId) return null
-      try {
-        const raw = sessionStorage.getItem(buildBundleCacheKey(weekStartStr, cartId))
-        if (!raw) return null
-        const parsed = JSON.parse(raw)
-        return parsed?.data || parsed
-      } catch (err) {
-        console.debug('[WeeklyCartPage] Failed to read bundle cache:', err)
-        return null
-      }
-    }
-
-    const writeBundleCache = (weekStartStr, cartId, bundle) => {
-      if (!weekStartStr || !cartId || !bundle) return
-      try {
-        sessionStorage.setItem(
-          buildBundleCacheKey(weekStartStr, cartId),
-          JSON.stringify({ data: bundle, cachedAt: Date.now() })
-        )
-      } catch (err) {
-        console.debug('[WeeklyCartPage] Failed to write bundle cache:', err)
-      }
-    }
-
-    const clearBundleCacheForWeek = (weekStartStr) => {
-      if (!weekStartStr) return
-      try {
-        const prefix = `${BUNDLE_CACHE_PREFIX}:${weekStartStr}:`
-        const keysToRemove = []
-        for (let i = 0; i < sessionStorage.length; i += 1) {
-          const key = sessionStorage.key(i)
-          if (key && key.startsWith(prefix)) {
-            keysToRemove.push(key)
-          }
-        }
-        keysToRemove.forEach((key) => sessionStorage.removeItem(key))
-      } catch (err) {
-        console.debug('[WeeklyCartPage] Failed to clear bundle cache:', err)
-      }
-    }
-
     const getBundleRoot = (response) => {
       const root = Array.isArray(response) ? response[0] : response
       if (!root || typeof root !== 'object') {
@@ -659,7 +604,7 @@ export default {
       )
     }
 
-    const loadWeeklyCartBundle = async ({ forceRefresh = false } = {}) => {
+    const loadWeeklyCartBundle = async () => {
       isLoadingIngredients.value = true
       weeklyIngredients.value = []
 
@@ -677,13 +622,11 @@ export default {
           return
         }
 
-        if (!forceRefresh) {
-          const cached = readBundleCache(weekStartStr, cart.id)
-          if (cached) {
-            applyBundleData(cached)
-            await loadMenuCosts()
-            return
-          }
+        const cachedBundle = weeklyCartStore.getBundle(weekStartStr, cart.id)
+        if (cachedBundle) {
+          applyBundleData(cachedBundle)
+          await loadMenuCosts()
+          return
         }
 
         const response = await weeklyCartService.getWeeklyCartPageBundle(cart.id, weekStartStr)
@@ -691,8 +634,7 @@ export default {
         if (bundleRoot?.error) {
           throw new Error(bundleRoot.error)
         }
-
-        writeBundleCache(weekStartStr, cart.id, bundleRoot)
+        weeklyCartStore.setBundle(weekStartStr, cart.id, bundleRoot)
         applyBundleData(bundleRoot)
         await loadMenuCosts()
       } catch (err) {
@@ -703,12 +645,6 @@ export default {
       }
     }
 
-    const refreshWeeklyCartBundle = async () => {
-      const weekStartStr = formatDate(currentWeekStart.value)
-      clearBundleCacheForWeek(weekStartStr)
-      await loadWeeklyCartBundle({ forceRefresh: true })
-    }
-    
     const fullDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
     const getFullDayName = (dateStr) => {
@@ -973,9 +909,8 @@ export default {
           
           // Menu is automatically added to weekly cart when created (backend synchronization)
           // Cart is automatically created if one doesn't exist for this week
-            // Invalidate bundle cache so UI reflects the new menu
-            clearBundleCacheForWeek(weekStart)
-          
+          weeklyCartStore.clearBundle(weekStart)
+
           closeAddMenuModal()
             // Refresh data with updated bundle
           await loadWeekData()
@@ -1008,9 +943,9 @@ export default {
         action: async () => {
           try {
             await weeklyCartStore.removeMenuFromCart(menu.id)
-              const weekStart = weeklyCartService.formatDate(currentWeekStart.value)
-              clearBundleCacheForWeek(weekStart)
-              // Refresh data with updated bundle
+            const weekStart = weeklyCartService.formatDate(currentWeekStart.value)
+            weeklyCartStore.clearBundle(weekStart)
+            // Refresh data with updated bundle
             await loadWeekData()
             // Refresh cart cost after removing menu
             await loadCartCost()
@@ -1104,7 +1039,6 @@ export default {
       getMenuForDate,
       formatQuantity,
       formatCost,
-      refreshWeeklyCartBundle,
       applySorting,
       handleMenuSortChange,
       handleStoreSortChange,

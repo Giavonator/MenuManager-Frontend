@@ -7,28 +7,6 @@
 import { reactive, computed } from 'vue'
 import { storeCatalogService } from '../services/storeCatalogService.js'
 
-const STORAGE_KEY = 'menumanager_catalog_store'
-
-const loadFromSession = () => {
-  if (typeof sessionStorage === 'undefined') return null
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : null
-  } catch (error) {
-    console.warn('[CatalogStore] Failed to read session storage:', error)
-    return null
-  }
-}
-
-const saveToSession = (payload) => {
-  if (typeof sessionStorage === 'undefined') return
-  try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  } catch (error) {
-    console.warn('[CatalogStore] Failed to write session storage:', error)
-  }
-}
-
 // Reactive state
 const state = reactive({
   items: [],
@@ -47,26 +25,13 @@ const compareItemNames = (left, right) => {
 
 class CatalogStore {
   constructor() {
-    const cached = loadFromSession()
-    if (cached && typeof cached === 'object') {
-      state.items = Array.isArray(cached.items) ? cached.items : []
-      state.loadedAt = typeof cached.loadedAt === 'number' ? cached.loadedAt : null
-      state.isLoaded = !!cached.isLoaded
-      state.error = cached.error || null
-    }
-
     if (state.items.length > 1) {
       state.items.sort(compareItemNames)
     }
   }
 
   persistState() {
-    saveToSession({
-      items: state.items,
-      loadedAt: state.loadedAt,
-      isLoaded: state.isLoaded,
-      error: state.error
-    })
+    // Intentionally no-op: in-memory only cache.
   }
 
   /**

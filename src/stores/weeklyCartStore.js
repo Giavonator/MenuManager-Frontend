@@ -22,7 +22,8 @@ const state = reactive({
   weekMenuMappings: {}, // Map of weekStart (date string) -> { [dateStr]: menuData }
   menuDetailsCache: {}, // Map of menuId -> menu details
   menuByDateCache: {}, // Map of dateStr -> menuId (from getMenuByDate responses)
-  buildingMappings: {} // Map of weekStart -> Promise (to prevent duplicate builds)
+  buildingMappings: {}, // Map of weekStart -> Promise (to prevent duplicate builds)
+  bundleCache: {} // Map of weekStart -> { cartId, bundle, cachedAt }
 })
 
 class WeeklyCartStore {
@@ -494,6 +495,43 @@ class WeeklyCartStore {
   }
 
   /**
+   * Get cached weekly cart bundle for a week
+   * @param {string} weekStart - Week start date string
+   * @param {string|null} cartId - Cart ID
+   * @returns {Object|null} - Cached bundle or null
+   */
+  getBundle(weekStart, cartId) {
+    const cached = state.bundleCache[weekStart]
+    if (!cached) return null
+    if (cartId && cached.cartId && cached.cartId !== cartId) return null
+    return cached.bundle || null
+  }
+
+  /**
+   * Cache weekly cart bundle for a week
+   * @param {string} weekStart - Week start date string
+   * @param {string} cartId - Cart ID
+   * @param {Object} bundle - Bundle payload
+   */
+  setBundle(weekStart, cartId, bundle) {
+    if (!weekStart || !cartId || !bundle) return
+    state.bundleCache[weekStart] = {
+      cartId,
+      bundle,
+      cachedAt: Date.now()
+    }
+  }
+
+  /**
+   * Clear cached weekly cart bundle for a week
+   * @param {Date|string} weekStartDate - Week start date
+   */
+  clearBundle(weekStartDate) {
+    const weekStart = this.getWeekStartString(weekStartDate)
+    delete state.bundleCache[weekStart]
+  }
+
+  /**
    * Add menu to cart (creates cart if needed)
    * @param {string} menuId - Menu ID
    * @param {string} menuDate - Menu date in YYYY-MM-DD format
@@ -528,6 +566,7 @@ class WeeklyCartStore {
       
       // Invalidate week menu mapping cache so it gets rebuilt with new menu
       this.clearWeekMenuMapping(weekStart)
+      this.clearBundle(weekStart)
       
       // Also cache menu ID for this date
       state.menuByDateCache[menuDate] = menuId
@@ -559,6 +598,7 @@ class WeeklyCartStore {
           cart.menuIds = cart.menuIds.filter(id => id !== menuId)
           // Invalidate week menu mapping cache so it gets rebuilt without this menu
           this.clearWeekMenuMapping(weekStart)
+          this.clearBundle(weekStart)
           break
         }
       }
@@ -591,6 +631,7 @@ class WeeklyCartStore {
         isLoading: false,
         error: null
       }
+      this.clearBundle(weekStart)
       
       console.log('[WeeklyCartStore] Cart created, cart ID:', cartId)
       return cartId
@@ -617,6 +658,7 @@ class WeeklyCartStore {
       delete state.carts[weekStart]
       state.loading[weekStart] = false
       state.errors[weekStart] = null
+      this.clearBundle(weekStart)
       
       console.log('[WeeklyCartStore] Cart deleted, cart ID:', cartId)
       return cartId
@@ -639,6 +681,7 @@ class WeeklyCartStore {
     state.menuDetailsCache = {}
     state.menuByDateCache = {}
     state.buildingMappings = {}
+    state.bundleCache = {}
   }
 
   /**
@@ -651,6 +694,7 @@ class WeeklyCartStore {
     state.loading[weekStart] = false
     state.errors[weekStart] = null
     this.clearWeekMenuMapping(weekStartDate)
+    this.clearBundle(weekStartDate)
   }
 
   // Getters

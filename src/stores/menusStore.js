@@ -8,28 +8,6 @@ import { reactive, computed } from 'vue'
 import { menuCollectionService } from '../services/menuCollectionService.js'
 import { authService } from '../services/authService.js'
 
-const STORAGE_KEY = 'menumanager_menus_store'
-
-const loadFromSession = () => {
-  if (typeof sessionStorage === 'undefined') return null
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : null
-  } catch (error) {
-    console.warn('[MenusStore] Failed to read session storage:', error)
-    return null
-  }
-}
-
-const saveToSession = (payload) => {
-  if (typeof sessionStorage === 'undefined') return
-  try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  } catch (error) {
-    console.warn('[MenusStore] Failed to write session storage:', error)
-  }
-}
-
 // Reactive state
 const state = reactive({
   menus: [],
@@ -47,34 +25,10 @@ const state = reactive({
 
 class MenusStore {
   constructor() {
-    const cached = loadFromSession()
-    if (cached && typeof cached === 'object') {
-      state.menus = Array.isArray(cached.menus) ? cached.menus : []
-      state.usersList = Array.isArray(cached.usersList) ? cached.usersList : []
-      state.ownerUsernames = cached.ownerUsernames && typeof cached.ownerUsernames === 'object'
-        ? cached.ownerUsernames
-        : {}
-      state.loadedAt = typeof cached.loadedAt === 'number' ? cached.loadedAt : null
-      state.isLoaded = !!cached.isLoaded
-      state.usersLoadedAt = typeof cached.usersLoadedAt === 'number' ? cached.usersLoadedAt : null
-      state.isUsersLoaded = !!cached.isUsersLoaded
-      state.currentUserId = cached.currentUserId || null
-      state.error = cached.error || null
-    }
   }
 
   persistState() {
-    saveToSession({
-      menus: state.menus,
-      usersList: state.usersList,
-      ownerUsernames: state.ownerUsernames,
-      loadedAt: state.loadedAt,
-      isLoaded: state.isLoaded,
-      usersLoadedAt: state.usersLoadedAt,
-      isUsersLoaded: state.isUsersLoaded,
-      currentUserId: state.currentUserId,
-      error: state.error
-    })
+    // Intentionally no-op: in-memory only cache.
   }
 
   /**
