@@ -5,8 +5,10 @@
 
 import axios from 'axios'
 
-// Use proxy in development, direct URL in production
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? '' : 'http://localhost:8000')
+// Use Vite proxy in development, Cloudflare Functions in production
+// In dev mode: empty string uses Vite proxy to localhost:8000
+// In production: /api routes through Cloudflare Functions
+const API_BASE_URL = import.meta.env.DEV ? '' : '/api'
 const SESSION_BODY_ENDPOINTS = new Set([
   '/api/MenuCollection/createMenu',
   '/api/MenuCollection/updateMenu',
