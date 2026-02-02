@@ -61,7 +61,13 @@
         <div class="item-header">
           <h3 class="item-primary-name">{{ item.name }}</h3>
           <div class="item-actions">
-            <button @click="editItem(item)" class="edit-btn">Edit</button>
+            <button
+              v-if="canManageItem(item)"
+              @click="editItem(item)"
+              class="edit-btn"
+            >
+              Edit
+            </button>
           </div>
         </div>
 
@@ -84,9 +90,9 @@
                 <span class="price">${{ (Number(option.price) || 0).toFixed(2) }}</span>
                 <span class="store">{{ option.store }}</span>
               </div>
-              <div class="option-actions">
+              <div class="option-actions" v-if="canManageItem(item)">
                 <button
-                  v-if="!option.confirmed"
+                  v-if="!option.confirmed && isAdmin"
                   @click="confirmPurchaseOption(option.id)"
                   class="confirm-btn"
                   :disabled="isConfirming(option.id)"
@@ -159,7 +165,6 @@
       <div v-if="searchQuery">
         <h3>No items found</h3>
         <p>No items match your search criteria.</p>
-        <button @click="clearSearch" class="clear-search-btn">Clear Search</button>
       </div>
       <div v-else>
         <h3>No items in catalog</h3>
@@ -243,9 +248,9 @@
                   <span class="price">${{ (Number(option.price) || 0).toFixed(2) }}</span>
                   <span class="store">{{ option.store }}</span>
                 </div>
-                <div class="option-actions">
+                <div class="option-actions" v-if="canManageItem(editingItem)">
                   <button
-                    v-if="!option.confirmed"
+                    v-if="!option.confirmed && isAdmin"
                     @click="confirmPurchaseOption(option.id)"
                     class="confirm-btn"
                     :disabled="isConfirming(option.id)"
@@ -504,6 +509,7 @@ import { storeCatalogService } from '../services/storeCatalogService.js'
 import { SUPPORTED_STORES, SUPPORTED_UNITS } from '../constants/storeCatalogConstants.js'
 import { catalogStore, catalogState } from '../stores/catalogStore.js'
 import { SHOW_PAGE_HEADERS } from '../constants/uiConfig.js'
+import { authState } from '../stores/authStore.js'
 
 export default {
   name: 'StoreCatalogPage',
@@ -561,6 +567,18 @@ export default {
     const updatePurchaseOptionLoading = ref(false)
 
     const deleteItemLoading = ref(false)
+    const isAdmin = computed(() => authState.isAdmin)
+
+    // Helpers for admin vs non-admin item management
+    const itemHasConfirmedOptions = (item) => {
+      if (!item || !Array.isArray(item.purchaseOptions)) return false
+      return item.purchaseOptions.some(po => po && po.confirmed)
+    }
+
+    const canManageItem = (item) => {
+      if (isAdmin.value) return true
+      return !itemHasConfirmedOptions(item)
+    }
     // Track per-purchase-option confirm loading
     const confirmingOptionIds = reactive(new Set())
     const isConfirming = (purchaseOptionId) => confirmingOptionIds.has(purchaseOptionId)
@@ -878,13 +896,31 @@ export default {
       clearUpdatePurchaseOptionErrors()
 
       try {
-        // Update each field separately as per API specification
-        await Promise.all([
-          storeCatalogService.updatePurchaseOptionQuantity(editingPurchaseOption.value.id, editingPurchaseOptionForm.quantity),
-          storeCatalogService.updatePurchaseOptionUnits(editingPurchaseOption.value.id, editingPurchaseOptionForm.units.trim()),
-          storeCatalogService.updatePurchaseOptionPrice(editingPurchaseOption.value.id, editingPurchaseOptionForm.price),
-          storeCatalogService.updatePurchaseOptionStore(editingPurchaseOption.value.id, editingPurchaseOptionForm.store.trim())
-        ])
+        // Only update fields that have actually changed
+        const original = editingPurchaseOption.value
+        const trimmedUnits = editingPurchaseOptionForm.units.trim()
+        const trimmedStore = editingPurchaseOptionForm.store.trim()
+        const formPrice = Number(editingPurchaseOptionForm.price) || 0
+        
+        const updates = []
+        
+        if (original.quantity !== editingPurchaseOptionForm.quantity) {
+          updates.push(storeCatalogService.updatePurchaseOptionQuantity(original.id, editingPurchaseOptionForm.quantity))
+        }
+        if (original.units !== trimmedUnits) {
+          updates.push(storeCatalogService.updatePurchaseOptionUnits(original.id, trimmedUnits))
+        }
+        if (original.price !== formPrice) {
+          updates.push(storeCatalogService.updatePurchaseOptionPrice(original.id, formPrice))
+        }
+        if (original.store !== trimmedStore) {
+          updates.push(storeCatalogService.updatePurchaseOptionStore(original.id, trimmedStore))
+        }
+        
+        // Only make API calls if there are actual changes
+        if (updates.length > 0) {
+          await Promise.all(updates)
+        }
         
         // Determine the item ID - use editingItem if available, otherwise find it from the purchase option
         let itemId
@@ -903,9 +939,9 @@ export default {
           editingPurchaseOption.value.id,
           (option) => {
             option.quantity = editingPurchaseOptionForm.quantity
-            option.units = editingPurchaseOptionForm.units.trim()
-            option.price = Number(editingPurchaseOptionForm.price) || 0
-            option.store = editingPurchaseOptionForm.store.trim()
+            option.units = trimmedUnits
+            option.price = formPrice
+            option.store = trimmedStore
           }
         )
 
@@ -944,6 +980,10 @@ export default {
     }
 
     const confirmPurchaseOption = async (purchaseOptionId) => {
+      if (!isAdmin.value) {
+        return
+      }
+
       try {
         confirmingOptionIds.add(purchaseOptionId)
         await storeCatalogService.confirmPurchaseOption(purchaseOptionId)
@@ -1015,6 +1055,9 @@ export default {
     }
 
     const editItem = (item) => {
+      if (!canManageItem(item)) {
+        return
+      }
       editingItem.value = item
       showEditItemModal.value = true
     }
@@ -1160,7 +1203,12 @@ export default {
       closeDeleteModal,
       editItem,
       editPurchaseOption,
-      deleteItem
+      deleteItem,
+
+      // Item management helpers
+      itemHasConfirmedOptions,
+      canManageItem,
+      isAdmin
     }
   }
 }
@@ -1522,6 +1570,9 @@ export default {
   border-radius: 8px;
   padding: 1rem;
   transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .purchase-option.confirmed {
@@ -1535,6 +1586,10 @@ export default {
   gap: 1rem;
   margin-bottom: 0.75rem;
   flex-wrap: wrap;
+}
+
+.purchase-option > .option-details:last-child {
+  margin-bottom: 0;
 }
 
 .quantity, .units, .price, .store {
@@ -1849,6 +1904,9 @@ select.form-input {
   border: 1px solid #e1e8ed;
   border-radius: 8px;
   padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .purchase-option-item.confirmed {
@@ -1862,6 +1920,10 @@ select.form-input {
   gap: 1rem;
   margin-bottom: 0.75rem;
   flex-wrap: wrap;
+}
+
+.purchase-option-item > .option-info:last-child {
+  margin-bottom: 0;
 }
 
 /* Delete Confirmation */

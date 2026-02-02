@@ -48,7 +48,7 @@ apiClient.interceptors.response.use(
     } else if (error.request) {
       // Request was made but no response received
       console.error('No response received. Request details:', error.request)
-      return Promise.reject(new Error('Network error: Unable to connect to server. Please check if the backend is running on http://localhost:8000'))
+      return Promise.reject(new Error('No response received. Either lack of permissions or backend error.'))
     } else {
       // Something else happened
       return Promise.reject(new Error(error.message || 'An unexpected error occurred'))

@@ -1062,8 +1062,8 @@ const editingIngredientIndex = ref(null) // Track which ingredient is being edit
     const ingredientSearchInputRef = ref(null)
     const editIngredientSearchInputRef = ref(null)
     
-    // Admin status
-    const isAdmin = ref(false)
+    // Admin status (cached in auth store)
+    const isAdmin = computed(() => authStore.isAdmin)
     
     // Computed properties
     const currentUser = computed(() => authStore.user)
@@ -1990,17 +1990,6 @@ const editingIngredientIndex = ref(null) // Track which ingredient is being edit
         
         loadAvailableRecipes()
         
-        // Load admin status
-        if (currentUser.value) {
-          try {
-            const adminStatus = await authStore.checkAdminStatus()
-            isAdmin.value = adminStatus
-          } catch (err) {
-            console.error('Error checking admin status:', err)
-            isAdmin.value = false
-          }
-        }
-        
         // If navigated with ?edit=1, open directly in edit mode
         if (route?.query?.edit === '1' || route?.query?.edit === 'true') {
           enterEditMode()
@@ -2090,21 +2079,6 @@ const editingIngredientIndex = ref(null) // Track which ingredient is being edit
         console.log('[MenuPage] menuId watcher - No change detected, skipping')
       }
       console.log('[MenuPage] ========== menuId watcher END ==========')
-    })
-    
-    // Watch currentUser to refresh admin status when user changes
-    watch(currentUser, async (newUser) => {
-      if (newUser) {
-        try {
-          const adminStatus = await authStore.checkAdminStatus()
-          isAdmin.value = adminStatus
-        } catch (err) {
-          console.error('Error checking admin status:', err)
-          isAdmin.value = false
-        }
-      } else {
-        isAdmin.value = false
-      }
     })
     
     return {

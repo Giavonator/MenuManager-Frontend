@@ -12,14 +12,18 @@ const state = reactive({
   user: null,
   isAuthenticated: false,
   isLoading: false,
-  error: null
+  error: null,
+  // Cached admin status
+  isAdmin: false,
+  isAdminLoaded: false
 })
 
 // Storage keys
 const STORAGE_KEYS = {
   USER: 'menumanager_user',
   SESSION_TOKEN: 'menumanager_session_token',
-  AUTH_STATE: 'menumanager_auth_state'
+  AUTH_STATE: 'menumanager_auth_state',
+  ADMIN: 'menumanager_is_admin'
 }
 
 class AuthStore {
@@ -35,11 +39,22 @@ class AuthStore {
       const storedUser = localStorage.getItem(STORAGE_KEYS.USER)
       const storedToken = localStorage.getItem(STORAGE_KEYS.SESSION_TOKEN)
       const storedAuthState = localStorage.getItem(STORAGE_KEYS.AUTH_STATE)
+      const storedAdmin = localStorage.getItem(STORAGE_KEYS.ADMIN)
 
       if (storedUser && storedToken && storedAuthState === 'true') {
         state.user = JSON.parse(storedUser)
         state.isAuthenticated = true
         console.log('Restored user session from storage:', state.user)
+        if (storedAdmin !== null) {
+          state.isAdmin = storedAdmin === 'true'
+          state.isAdminLoaded = true
+        } else {
+          state.isAdmin = false
+          state.isAdminLoaded = false
+        }
+      } else {
+        state.isAdmin = false
+        state.isAdminLoaded = false
       }
     } catch (error) {
       console.error('Error restoring session from storage:', error)
@@ -56,6 +71,7 @@ class AuthStore {
         localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(state.user))
         localStorage.setItem(STORAGE_KEYS.SESSION_TOKEN, state.user.id || '')
         localStorage.setItem(STORAGE_KEYS.AUTH_STATE, 'true')
+        localStorage.setItem(STORAGE_KEYS.ADMIN, state.isAdmin ? 'true' : 'false')
         console.log('Saved user session to storage')
       } else {
         this.clearStorage()
@@ -73,6 +89,7 @@ class AuthStore {
       localStorage.removeItem(STORAGE_KEYS.USER)
       localStorage.removeItem(STORAGE_KEYS.SESSION_TOKEN)
       localStorage.removeItem(STORAGE_KEYS.AUTH_STATE)
+      localStorage.removeItem(STORAGE_KEYS.ADMIN)
       console.log('Cleared user session from storage')
     } catch (error) {
       console.error('Error clearing session from storage:', error)
@@ -107,6 +124,8 @@ class AuthStore {
     state.user = user
     state.isAuthenticated = true
     state.error = null
+    state.isAdmin = false
+    state.isAdminLoaded = false
     this.saveToStorage()
   }
 
@@ -117,6 +136,8 @@ class AuthStore {
     state.user = null
     state.isAuthenticated = false
     state.error = null
+    state.isAdmin = false
+    state.isAdminLoaded = false
     this.clearStorage()
   }
 
@@ -138,7 +159,8 @@ class AuthStore {
         }
         
         this.setUser(userData)
-        return { success: true, user: userData }
+        const isAdmin = await this.checkAdminStatus()
+        return { success: true, user: userData, isAdmin }
       } else {
         throw new Error('Invalid response from server')
       }
@@ -168,7 +190,8 @@ class AuthStore {
         }
         
         this.setUser(userData)
-        return { success: true, user: userData }
+        const isAdmin = await this.checkAdminStatus()
+        return { success: true, user: userData, isAdmin }
       } else {
         throw new Error('Invalid response from server')
       }
@@ -192,13 +215,28 @@ class AuthStore {
    * Check if user is admin
    */
   async checkAdminStatus() {
-    if (!state.user) return false
+    if (!state.user) {
+      state.isAdmin = false
+      state.isAdminLoaded = false
+      return false
+    }
+
+    if (state.isAdminLoaded) {
+      return state.isAdmin
+    }
 
     try {
       const response = await authService.getIsUserAdmin(state.user.id)
-      return response[0]?.isAdmin || false
+      const isAdmin = !!(response && response[0]?.isAdmin)
+      state.isAdmin = isAdmin
+      state.isAdminLoaded = true
+      this.saveToStorage()
+      return isAdmin
     } catch (error) {
       console.error('Error checking admin status:', error)
+      state.isAdmin = false
+      state.isAdminLoaded = true
+      this.saveToStorage()
       return false
     }
   }
@@ -271,6 +309,10 @@ class AuthStore {
   get userId() {
     return state.user?.id || null
   }
+
+  get isAdmin() {
+    return state.isAdmin
+  }
 }
 
 // Create and export singleton instance
@@ -284,3 +326,4 @@ export const isAuthenticated = computed(() => state.isAuthenticated)
 export const currentUser = computed(() => state.user)
 export const isLoading = computed(() => state.isLoading)
 export const authError = computed(() => state.error)
+export const isAdmin = computed(() => state.isAdmin)
