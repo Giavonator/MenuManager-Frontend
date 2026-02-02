@@ -220,7 +220,7 @@
     <div v-if="showEditItemModal" class="modal-overlay" @click="closeEditItemModal">
       <div class="modal-content large-modal" @click.stop>
         <div class="modal-header">
-          <h2>Edit Item: {{ editingItem?.name }}</h2>
+          <h2>{{ editingItem?.name }}</h2>
           <div class="modal-header-actions">
             <button @click="deleteItem(editingItem)" class="delete-btn">Delete Item</button>
             <button @click="closeEditItemModal" class="close-button">&times;</button>
@@ -228,6 +228,33 @@
         </div>
         
         <div class="edit-item-content">
+          <!-- Item Name Section -->
+          <div class="edit-section">
+            <h3>Item Name</h3>
+            <div class="form-group">
+              <div class="name-input-row">
+                <input
+                  v-model="editingItemName"
+                  type="text"
+                  :disabled="updateItemNameLoading"
+                  placeholder="Enter item name"
+                  class="form-input"
+                  :class="{ 'error': updateItemNameError }"
+                />
+                <button 
+                  @click="handleUpdateItemName" 
+                  :disabled="updateItemNameLoading || !editingItemName.trim() || editingItemName === editingItem?.name"
+                  class="submit-button inline-update-btn"
+                  :class="{ 'loading': updateItemNameLoading }"
+                >
+                  <span v-if="updateItemNameLoading" class="spinner"></span>
+                  {{ updateItemNameLoading ? 'Updating...' : 'Update Name' }}
+                </button>
+              </div>
+              <span v-if="updateItemNameError" class="error-message">{{ updateItemNameError }}</span>
+            </div>
+          </div>
+
           <!-- Purchase Options Section -->
           <div class="edit-section">
             <h3>Purchase Options</h3>
@@ -649,6 +676,9 @@ export default {
     const editingItem = ref(null)
     const editingPurchaseOption = ref(null)
     const itemToDelete = ref(null)
+    const editingItemName = ref('')
+    const updateItemNameLoading = ref(false)
+    const updateItemNameError = ref('')
 
     // Computed properties
     const isAddPurchaseOptionFormValid = computed(() => {
@@ -979,6 +1009,40 @@ export default {
       }
     }
 
+    const handleUpdateItemName = async () => {
+      if (!editingItem.value || !editingItemName.value.trim()) {
+        return
+      }
+
+      updateItemNameLoading.value = true
+      updateItemNameError.value = ''
+
+      try {
+        await storeCatalogService.updateItemName(
+          editingItem.value.id,
+          editingItemName.value.trim()
+        )
+        
+        // Update the item name in the store
+        catalogStore.updateItemName(editingItem.value.id, editingItemName.value.trim())
+        
+        // Update editingItem if it exists
+        if (editingItem.value) {
+          editingItem.value.name = editingItemName.value.trim()
+        }
+        
+        // Update filtered items to reflect the name change
+        filterItems()
+        
+        successMessage.value = 'Item name updated successfully!'
+      } catch (error) {
+        console.error('Update item name error:', error)
+        updateItemNameError.value = error.message || 'Failed to update item name'
+      } finally {
+        updateItemNameLoading.value = false
+      }
+    }
+
     const confirmPurchaseOption = async (purchaseOptionId) => {
       if (!isAdmin.value) {
         return
@@ -1030,6 +1094,8 @@ export default {
     const closeEditItemModal = () => {
       showEditItemModal.value = false
       editingItem.value = null
+      editingItemName.value = ''
+      updateItemNameError.value = ''
     }
 
     const closeAddPurchaseOptionModal = () => {
@@ -1059,6 +1125,8 @@ export default {
         return
       }
       editingItem.value = item
+      editingItemName.value = item.name // Initialize the editable name
+      updateItemNameError.value = '' // Clear any previous errors
       showEditItemModal.value = true
     }
 
@@ -1159,6 +1227,9 @@ export default {
       editingItem,
       editingPurchaseOption,
       itemToDelete,
+      editingItemName,
+      updateItemNameLoading,
+      updateItemNameError,
 
       // Constants
       SUPPORTED_STORES,
@@ -1190,6 +1261,7 @@ export default {
       handleAddItem,
       handleAddPurchaseOption,
       handleUpdatePurchaseOption,
+      handleUpdateItemName,
       handleDeleteItem,
       confirmPurchaseOption,
       removePurchaseOption,
@@ -1817,6 +1889,22 @@ select.form-input {
   color: var(--accent-red);
   font-size: 0.875rem;
   font-weight: 500;
+}
+
+.name-input-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.name-input-row .form-input {
+  flex: 1;
+}
+
+.inline-update-btn {
+  padding: 0.875rem 1.5rem;
+  white-space: nowrap;
+  min-width: auto;
 }
 
 .submit-button {
