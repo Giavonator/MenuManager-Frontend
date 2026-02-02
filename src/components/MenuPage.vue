@@ -216,18 +216,18 @@
             <h3 class="add-recipe-title">Add Recipe to Menu</h3>
             <div class="add-recipe-header-tabs prominent-tabs">
               <button 
-                @click="addRecipeMode = 'existing'" 
-                :class="{ active: addRecipeMode === 'existing' }"
-                class="tab-btn prominent"
-              >
-                Use Existing Recipe
-              </button>
-              <button 
                 @click="addRecipeMode = 'new'" 
                 :class="{ active: addRecipeMode === 'new' }"
                 class="tab-btn prominent"
               >
                 Create New Recipe
+              </button>
+              <button 
+                @click="addRecipeMode = 'existing'" 
+                :class="{ active: addRecipeMode === 'existing' }"
+                class="tab-btn prominent"
+              >
+                Use Existing Recipe
               </button>
             </div>
           </div>
@@ -257,6 +257,8 @@
               </select>
             </div>
             
+            <p class="recipe-reuse-info-note">Reusing a recipe is a direct copy, therefore, if you modify the recipe in this menu it will modify it in every other menu this recipe is used (including cost calculations). In most cases this shouldn't matter, but should be kept in mind when planning menus.</p>
+            
             <div class="form-group">
               <label for="scaling-factor">Scaling Factor</label>
               <input 
@@ -268,6 +270,10 @@
                 class="form-input"
               />
             </div>
+            
+            <p class="scaling-summary" v-if="scalingFactor && scalingFactor > 0">
+              When a Scaling Factor of X is applied, the Menu will calculate ingredient purchases by multiplying each ingredient quantity specified in the recipe by X. For example, with a Scaling Factor of 3, the Menu will purchase enough ingredients to cover 3 times the recipe's base serving requirements. The scaling factor directly affects the total cost calculations for this menu.
+            </p>
           </div>
 
           <!-- New Recipe Creation -->
@@ -1023,7 +1029,7 @@ export default {
     const showAddRecipeModal = ref(false)
     const showEditRecipeModal = ref(false)
     const showScalingModal = ref(false)
-    const addRecipeMode = ref('existing')
+    const addRecipeMode = ref('new')
     const selectedRecipeId = ref('')
     const scalingFactor = ref(1)
     const newScalingFactor = ref(1)
@@ -1497,7 +1503,7 @@ const editingIngredientIndex = ref(null) // Track which ingredient is being edit
       clearIngredientSelection()
       newIngredient.quantity = 1
       showIngredientForm.value = false
-      addRecipeMode.value = 'existing'
+      addRecipeMode.value = 'new'
     }
     
     function openAddIngredientForm() {
@@ -2520,6 +2526,12 @@ button::-moz-focus-inner { border: 0; }
 
 .edit-icon {
   font-size: 1.2rem;
+}
+
+/* Recipe Reuse Info Note and Scaling Summary */
+.recipe-reuse-info-note,
+.scaling-summary {
+  margin-bottom: 1rem;
 }
 
 /* Menu Form */
