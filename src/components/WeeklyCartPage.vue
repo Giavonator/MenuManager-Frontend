@@ -142,7 +142,7 @@
       </div>
       
       <div v-else class="ingredients-list">
-        <div class="ingredients-summary">
+        <div v-if="!sortByMenu && !sortByStore" class="ingredients-summary">
           <div class="summary-text">
             <p><strong>Total Ingredients:</strong> {{ ingredientCount }}</p>
             <p><strong>Total Cost:</strong> {{ formatCost(totalCost) }}</p>
@@ -152,7 +152,8 @@
             class="instacart-btn instacart-btn-all"
             :disabled="isExportingToInstacart || weeklyIngredients.length === 0"
           >
-            🥕 Add all ingredients to Instacart
+            <img src="/Instacart_brand_logo.png" alt="Instacart" class="instacart-logo" />
+            {{ INSTACART_BUTTON_TEXT }}
           </button>
         </div>
         
@@ -171,7 +172,8 @@
                   :disabled="isExportingToInstacart"
                   :title="`Add ${ingredient.name} ingredients to Instacart`"
                 >
-                  🥕 Add store ingredients to Instacart
+                  <img src="/Instacart_brand_logo.png" alt="Instacart" class="instacart-logo" />
+                  {{ INSTACART_BUTTON_TEXT }}
                 </button>
               </h4>
               <div v-else-if="ingredient.isMenuHeader" class="menu-header-content">
@@ -186,7 +188,8 @@
                     :disabled="isExportingToInstacart"
                     :title="`Add ${ingredient.menuName} ingredients to Instacart`"
                   >
-                    🥕 Add menu ingredients to Instacart
+                    <img src="/Instacart_brand_logo.png" alt="Instacart" class="instacart-logo" />
+                    {{ INSTACART_BUTTON_TEXT }}
                   </button>
                 </div>
                 <div class="menu-header-right">
@@ -293,6 +296,9 @@ export default {
     // Sorting state (default to combined list)
     const sortByMenu = ref(false)
     const sortByStore = ref(false)
+    
+    // Instacart button text constant
+    const INSTACART_BUTTON_TEXT = 'Get Ingredients'
     
     // Instacart export state
     const isExportingToInstacart = ref(false)
@@ -1376,6 +1382,7 @@ export default {
       confirmModal,
       sortByMenu,
       sortByStore,
+      INSTACART_BUTTON_TEXT,
       isExportingToInstacart,
       instacartError,
       
@@ -2188,25 +2195,27 @@ export default {
 }
 
 .instacart-btn {
-  background: #00A862;
-  color: white;
+  background: #003D29;
+  color: #FAF1E5;
   border: none;
-  border-radius: 6px;
-  padding: 0.5rem 1rem;
+  border-radius: 23px;
+  height: 46px;
+  padding: 8px 18px;
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 10px;
   transition: all 0.3s ease;
   white-space: nowrap;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 .instacart-btn:hover:not(:disabled) {
-  background: #008f52;
+  background: #002a1d;
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 168, 98, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 61, 41, 0.3);
 }
 
 .instacart-btn:disabled {
@@ -2215,20 +2224,26 @@ export default {
   transform: none;
 }
 
+.instacart-logo {
+  height: 22px;
+  width: auto;
+  display: block;
+}
+
 .instacart-btn-all {
-  padding: 0.75rem 1.25rem;
-  font-size: 1rem;
+  padding: 8px 18px;
+  font-size: 0.9rem;
 }
 
 .instacart-btn-store {
-  padding: 0.4rem 0.75rem;
-  font-size: 0.85rem;
+  padding: 8px 18px;
+  font-size: 0.9rem;
   margin-left: 1rem;
 }
 
 .instacart-btn-menu {
-  padding: 0.4rem 0.75rem;
-  font-size: 0.85rem;
+  padding: 8px 18px;
+  font-size: 0.9rem;
   margin-left: 1rem;
 }
 
