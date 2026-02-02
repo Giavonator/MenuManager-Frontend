@@ -404,6 +404,11 @@ export default {
     })
 
     const totalCost = computed(() => {
+      // Prefer backend cartCost as authoritative source
+      if (cartCost.value !== null && cartCost.value !== undefined) {
+        return cartCost.value
+      }
+      // Fallback to frontend calculation (now fixed)
       return weeklyIngredients.value.reduce((total, ingredient) => {
         return total + (ingredient.totalCost || 0)
       }, 0)
@@ -451,22 +456,44 @@ export default {
         const ownerName = menu?.ownerName || menu?.owner || menu?.ownerId || 'Unknown User'
         const date = menu?.date
 
+        // Aggregate ingredients by name within this menu
+        const menuIngredientsMap = new Map() // key: ingredient name, value: aggregated ingredient data
+
         const recipes = Array.isArray(menu?.recipes) ? menu.recipes : []
         recipes.forEach((recipe) => {
           const ingredients = Array.isArray(recipe?.ingredients) ? recipe.ingredients : []
           ingredients.forEach((ingredient) => {
             if (!ingredient?.name) return
-            if (!sources.has(ingredient.name)) {
-              sources.set(ingredient.name, [])
+            
+            const ingredientName = ingredient.name
+            const ingredientKey = `${ingredientName}::${ingredient.units || ''}`
+            
+            if (!menuIngredientsMap.has(ingredientKey)) {
+              menuIngredientsMap.set(ingredientKey, {
+                name: ingredientName,
+                units: ingredient.units || '',
+                quantity: 0
+              })
             }
-            sources.get(ingredient.name).push({
-              menuId,
-              menuName,
-              ownerName,
-              date,
-              quantity: Number(ingredient.quantity ?? 0),
-              units: ingredient.units || ''
-            })
+            
+            const aggregated = menuIngredientsMap.get(ingredientKey)
+            aggregated.quantity += Number(ingredient.quantity ?? 0)
+          })
+        })
+
+        // Now add aggregated ingredients to sources map
+        menuIngredientsMap.forEach((aggregatedIngredient) => {
+          const ingredientName = aggregatedIngredient.name
+          if (!sources.has(ingredientName)) {
+            sources.set(ingredientName, [])
+          }
+          sources.get(ingredientName).push({
+            menuId,
+            menuName,
+            ownerName,
+            date,
+            quantity: aggregatedIngredient.quantity,
+            units: aggregatedIngredient.units
           })
         })
       })
@@ -509,7 +536,7 @@ export default {
       const ingredientsMap = new Map()
 
       if (optimalOrders.length > 0) {
-        optimalOrders.forEach((order) => {
+        optimalOrders.forEach((order, orderIndex) => {
           const purchaseOptionId = order?.purchaseOptionId || order?.purchaseOption?.id
           const purchaseOption = purchaseOptionId ? purchaseOptionById.get(purchaseOptionId) : null
           const itemId = order?.itemId || purchaseOption?.itemId
@@ -522,8 +549,16 @@ export default {
           const rawQuantity = Number(order?.quantity ?? 0)
           const totalQuantity = Number.isFinite(rawQuantity) ? rawQuantity * orderCount : 0
 
-          const rawPrice = Number(order?.price ?? purchaseOption?.price ?? 0)
-          const totalCost = Number.isFinite(rawPrice) ? rawPrice * orderCount : 0
+          // Prefer purchaseOption.price as it's guaranteed to be per-unit from catalog
+          // order.price might be total price, so only use as fallback
+          const perUnitPrice = purchaseOption?.price !== undefined && purchaseOption?.price !== null
+            ? Number(purchaseOption.price)
+            : (order?.price !== undefined && order?.price !== null ? Number(order.price) : 0)
+          
+          // Calculate cost: per-unit price × total quantity
+          const totalCost = Number.isFinite(perUnitPrice) && Number.isFinite(totalQuantity) && totalQuantity > 0
+            ? perUnitPrice * totalQuantity
+            : 0
 
           // Check if purchase option is confirmed (default to false if purchase option not found)
           const isConfirmed = purchaseOption ? (purchaseOption.confirmed === true) : false
@@ -536,11 +571,16 @@ export default {
             totalCost: 0,
             store,
             sources: [],
-            isConfirmed: true // Default to confirmed, will be set to false if any option is unconfirmed
+            isConfirmed: true, // Default to confirmed, will be set to false if any option is unconfirmed
+            perUnitPrice: 0 // Store per-unit price for recalculation
           }
 
           baseEntry.totalQuantity += totalQuantity
           baseEntry.totalCost += totalCost
+          // Store per-unit price (use the latest one if multiple orders)
+          if (perUnitPrice > 0) {
+            baseEntry.perUnitPrice = perUnitPrice
+          }
           // If this purchase option is unconfirmed, mark the ingredient as unconfirmed
           if (!isConfirmed) {
             baseEntry.isConfirmed = false
@@ -555,6 +595,19 @@ export default {
 
           ingredientsMap.set(key, baseEntry)
         })
+        
+        // Recalculate costs based on source quantities if they differ from optimalOrder quantities
+        // This handles cases where the backend optimizes to buy less, but we need to show cost for total needed
+        ingredientsMap.forEach((entry, key) => {
+          if (entry.sources && entry.sources.length > 0) {
+            const sourceTotalQuantity = entry.sources.reduce((sum, source) => sum + (Number(source.quantity) || 0), 0)
+            // If source total quantity differs from optimalOrder quantity, recalculate cost using stored per-unit price
+            if (sourceTotalQuantity > 0 && Math.abs(sourceTotalQuantity - entry.totalQuantity) > 0.01 && entry.perUnitPrice > 0) {
+              entry.totalQuantity = sourceTotalQuantity
+              entry.totalCost = entry.perUnitPrice * sourceTotalQuantity
+            }
+          }
+        })
       } else {
         aggregatedIngredients.forEach((ingredient) => {
           const name = ingredient?.name || 'Unknown Item'
@@ -565,7 +618,7 @@ export default {
             : []
           const fallbackOption = purchaseOptions[0]
           const store = fallbackOption?.store || 'Unknown Store'
-          const totalCost = Number(fallbackOption?.price ?? 0)
+          const totalCost = Number.isFinite(totalQuantity) && fallbackOption?.price ? Number(fallbackOption.price) * totalQuantity : 0
 
           // Check if fallback purchase option is confirmed (default to false if no option)
           const isConfirmed = fallbackOption ? (fallbackOption.confirmed === true) : false
@@ -760,7 +813,7 @@ export default {
       }
       
       if (sortByStore.value) {
-        // Only store sorting: group ingredients by store
+        // Only store sorting: group ingredients by store and aggregate by ingredient name
         const storeSections = new Map()
 
         for (const ingredient of weeklyIngredients.value) {
@@ -769,13 +822,71 @@ export default {
           if (!storeSections.has(store)) {
             storeSections.set(store, {
               storeName: store,
-              ingredients: []
+              ingredients: new Map() // Use Map to aggregate by ingredient name
             })
           }
 
           const section = storeSections.get(store)
-          section.ingredients.push(ingredient)
+          // Aggregate ingredients by name within each store section
+          const ingredientKey = `${ingredient.name}::${ingredient.units || ''}`
+          
+          if (!section.ingredients.has(ingredientKey)) {
+            section.ingredients.set(ingredientKey, {
+              name: ingredient.name,
+              units: ingredient.units || '',
+              totalQuantity: 0,
+              totalCost: 0,
+              store: ingredient.store,
+              isConfirmed: ingredient.isConfirmed !== false, // Default to true
+              sources: []
+            })
+          }
+
+          const aggregatedIngredient = section.ingredients.get(ingredientKey)
+          aggregatedIngredient.totalQuantity += Number(ingredient.totalQuantity || 0)
+          aggregatedIngredient.totalCost += Number(ingredient.totalCost || 0)
+          // Preserve unconfirmed status if any ingredient is unconfirmed
+          if (ingredient.isConfirmed === false) {
+            aggregatedIngredient.isConfirmed = false
+          }
+          // Merge sources, aggregating by menu across all ingredients with the same name
+          if (ingredient.sources && ingredient.sources.length > 0) {
+            // Create or get source menu map for this aggregated ingredient
+            if (!aggregatedIngredient._sourceMenuMap) {
+              aggregatedIngredient._sourceMenuMap = new Map()
+            }
+            const sourceMenuMap = aggregatedIngredient._sourceMenuMap
+            
+            ingredient.sources.forEach(source => {
+              const menuKey = `${source.menuId || ''}-${source.date || ''}`
+              if (!sourceMenuMap.has(menuKey)) {
+                sourceMenuMap.set(menuKey, {
+                  menuId: source.menuId,
+                  menuName: source.menuName,
+                  ownerName: source.ownerName,
+                  date: source.date,
+                  quantity: 0,
+                  units: source.units || ingredient.units,
+                  store: source.store || ingredient.store
+                })
+              }
+              const aggregatedSource = sourceMenuMap.get(menuKey)
+              aggregatedSource.quantity += Number(source.quantity || 0)
+            })
+          }
         }
+
+        // Convert ingredient Maps to arrays and finalize sources
+        storeSections.forEach((section) => {
+          section.ingredients.forEach((ingredient) => {
+            // Convert source menu map to sources array
+            if (ingredient._sourceMenuMap) {
+              ingredient.sources = Array.from(ingredient._sourceMenuMap.values())
+              delete ingredient._sourceMenuMap
+            }
+          })
+          section.ingredients = Array.from(section.ingredients.values())
+        })
 
         // Flatten into sorted array by store name, then by ingredient name
         sortedIngredients.value = []
@@ -818,29 +929,54 @@ export default {
                 menuName: source.menuName,
                 ownerName,
                 menuCost,
-                ingredients: []
+                ingredients: new Map() // Use Map to aggregate by ingredient name
               })
             }
 
             const section = menuSections.get(sectionKey)
-            section.ingredients.push({
-              name: ingredient.name,
-              units: source.units || ingredient.units,
-              totalQuantity: source.quantity,
-              totalCost: ingredient.totalCost || 0,
-              isConfirmed: ingredient.isConfirmed, // Preserve confirmation status
-              sources: [{
-                menuId: section.menuId,
-                menuName: section.menuName,
-                ownerName: section.ownerName,
-                date: section.date,
-                quantity: source.quantity,
+            const ingredientKey = `${ingredient.name}::${source.units || ingredient.units}::${source.store || ingredient.store || ''}`
+            
+            if (!section.ingredients.has(ingredientKey)) {
+              section.ingredients.set(ingredientKey, {
+                name: ingredient.name,
                 units: source.units || ingredient.units,
-                store: source.store || ingredient.store
-              }]
+                totalQuantity: 0,
+                totalCost: 0,
+                isConfirmed: ingredient.isConfirmed,
+                store: source.store || ingredient.store || ingredient.store,
+                sources: []
+              })
+            }
+
+            const aggregatedIngredient = section.ingredients.get(ingredientKey)
+            aggregatedIngredient.totalQuantity += Number(source.quantity || 0)
+            // Calculate cost proportionally based on quantity
+            const sourceQuantity = Number(source.quantity || 0)
+            const totalSourceQuantity = ingredient.sources.reduce((sum, s) => sum + Number(s.quantity || 0), 0)
+            if (totalSourceQuantity > 0 && ingredient.totalCost) {
+              aggregatedIngredient.totalCost += (ingredient.totalCost * sourceQuantity) / totalSourceQuantity
+            }
+            // Preserve unconfirmed status if any source is unconfirmed
+            if (ingredient.isConfirmed === false) {
+              aggregatedIngredient.isConfirmed = false
+            }
+            // Add source to sources array
+            aggregatedIngredient.sources.push({
+              menuId: section.menuId,
+              menuName: section.menuName,
+              ownerName: section.ownerName,
+              date: section.date,
+              quantity: source.quantity,
+              units: source.units || ingredient.units,
+              store: source.store || ingredient.store
             })
           }
         }
+
+        // Convert ingredient Maps to arrays
+        menuSections.forEach((section) => {
+          section.ingredients = Array.from(section.ingredients.values())
+        })
 
         // Flatten into sorted array by menu date
         sortedIngredients.value = []
