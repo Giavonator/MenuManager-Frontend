@@ -115,9 +115,6 @@
                 <span class="menu-owner">Owner: {{ searchOwnerUsernames[menu.owner] || menu.owner }}</span>
                 <span class="recipe-count">{{ menu.recipeCount }} recipes</span>
               </div>
-              <div class="menu-card-actions">
-                <button @click.stop="viewMenu(menu.id)" class="view-btn">View Menu</button>
-              </div>
             </div>
           </div>
         </div>
@@ -778,7 +775,7 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: 0.5rem;
   color: #666;
   font-size: 0.9rem;
 }

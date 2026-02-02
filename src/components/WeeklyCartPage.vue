@@ -158,7 +158,7 @@
         
         <div class="ingredients-grid">
           <div v-for="ingredient in sortedIngredients" :key="`${ingredient.name}-${ingredient.units}-${ingredient.store || ''}-${ingredient.isMenuHeader || ingredient.isStoreHeader ? 'header' : ''}`" 
-               :class="['ingredient-item', { 'menu-header': ingredient.isMenuHeader, 'store-header': ingredient.isStoreHeader }]">
+               :class="['ingredient-item', { 'menu-header': ingredient.isMenuHeader, 'store-header': ingredient.isStoreHeader, 'unconfirmed-ingredient': !ingredient.isMenuHeader && !ingredient.isStoreHeader && ingredient.isConfirmed === false }]">
             <div class="ingredient-info">
               <h4 v-if="!ingredient.isMenuHeader && !ingredient.isStoreHeader">
                 {{ ingredient.name }} <span class="ingredient-cost">{{ formatCost(ingredient.totalCost) }}</span>
@@ -525,6 +525,9 @@ export default {
           const rawPrice = Number(order?.price ?? purchaseOption?.price ?? 0)
           const totalCost = Number.isFinite(rawPrice) ? rawPrice * orderCount : 0
 
+          // Check if purchase option is confirmed (default to false if purchase option not found)
+          const isConfirmed = purchaseOption ? (purchaseOption.confirmed === true) : false
+
           const key = `${itemName}::${store}::${units}`
           const baseEntry = ingredientsMap.get(key) || {
             name: itemName,
@@ -532,11 +535,16 @@ export default {
             totalQuantity: 0,
             totalCost: 0,
             store,
-            sources: []
+            sources: [],
+            isConfirmed: true // Default to confirmed, will be set to false if any option is unconfirmed
           }
 
           baseEntry.totalQuantity += totalQuantity
           baseEntry.totalCost += totalCost
+          // If this purchase option is unconfirmed, mark the ingredient as unconfirmed
+          if (!isConfirmed) {
+            baseEntry.isConfirmed = false
+          }
 
           if (!baseEntry.sources.length && sourcesByName.has(itemName)) {
             baseEntry.sources = sourcesByName.get(itemName).map((source) => ({
@@ -559,6 +567,9 @@ export default {
           const store = fallbackOption?.store || 'Unknown Store'
           const totalCost = Number(fallbackOption?.price ?? 0)
 
+          // Check if fallback purchase option is confirmed (default to false if no option)
+          const isConfirmed = fallbackOption ? (fallbackOption.confirmed === true) : false
+
           const key = `${name}::${store}::${units}`
           const baseEntry = ingredientsMap.get(key) || {
             name,
@@ -566,11 +577,16 @@ export default {
             totalQuantity: 0,
             totalCost: 0,
             store,
-            sources: []
+            sources: [],
+            isConfirmed: true // Default to confirmed, will be set to false if any option is unconfirmed
           }
 
           baseEntry.totalQuantity += totalQuantity
           baseEntry.totalCost += totalCost
+          // If this purchase option is unconfirmed, mark the ingredient as unconfirmed
+          if (!isConfirmed) {
+            baseEntry.isConfirmed = false
+          }
 
           if (!baseEntry.sources.length && sourcesByName.has(name)) {
             baseEntry.sources = sourcesByName.get(name).map((source) => ({
@@ -715,9 +731,25 @@ export default {
         return
       }
       
-      // Neither enabled: Show default aggregated view
+      // Helper function to sort ingredients: unconfirmed first, then alphabetical
+      const sortIngredients = (a, b) => {
+        // Headers should maintain their position
+        if (a.isMenuHeader || a.isStoreHeader || b.isMenuHeader || b.isStoreHeader) {
+          return 0
+        }
+        // Unconfirmed ingredients come first
+        const aConfirmed = a.isConfirmed !== false // Default to true if not set
+        const bConfirmed = b.isConfirmed !== false
+        if (aConfirmed !== bConfirmed) {
+          return aConfirmed ? 1 : -1 // Unconfirmed (false) comes first
+        }
+        // If both have same confirmation status, sort alphabetically
+        return a.name.localeCompare(b.name)
+      }
+      
+      // Neither enabled: Show default aggregated view, sorted by unconfirmed first, then alphabetical
       if (!sortByStore.value && !sortByMenu.value) {
-        sortedIngredients.value = weeklyIngredients.value
+        sortedIngredients.value = [...weeklyIngredients.value].sort(sortIngredients)
         return
       }
       
@@ -760,9 +792,9 @@ export default {
               isStoreHeader: true
             })
 
-            // Add ingredients for this store, sorted by name
+            // Add ingredients for this store, sorted by unconfirmed first, then name
             section.ingredients
-              .sort((a, b) => a.name.localeCompare(b.name))
+              .sort(sortIngredients)
               .forEach((ing) => sortedIngredients.value.push(ing))
           })
       } else if (sortByMenu.value) {
@@ -796,6 +828,7 @@ export default {
               units: source.units || ingredient.units,
               totalQuantity: source.quantity,
               totalCost: ingredient.totalCost || 0,
+              isConfirmed: ingredient.isConfirmed, // Preserve confirmation status
               sources: [{
                 menuId: section.menuId,
                 menuName: section.menuName,
@@ -834,7 +867,7 @@ export default {
             })
 
             section.ingredients
-              .sort((a, b) => a.name.localeCompare(b.name))
+              .sort(sortIngredients)
               .forEach((ing) => sortedIngredients.value.push(ing))
           })
       }
@@ -2098,6 +2131,11 @@ export default {
 .ingredient-item:hover:not(.menu-header):not(.store-header) {
   border-color: var(--primary-color);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.ingredient-item.unconfirmed-ingredient:not(.menu-header):not(.store-header) {
+  background: #ffebee;
+  border-color: #ef9a9a;
 }
 
 .ingredient-info {
