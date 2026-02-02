@@ -414,7 +414,7 @@ export default {
       if (cartCost.value !== null && cartCost.value !== undefined) {
         return cartCost.value
       }
-      // Fallback to frontend calculation (now fixed)
+      // Fallback to frontend calculation
       return weeklyIngredients.value.reduce((total, ingredient) => {
         return total + (ingredient.totalCost || 0)
       }, 0)
@@ -452,6 +452,9 @@ export default {
     }
 
     const buildSourcesByName = (menus) => {
+      // Build a map of ingredient names to their source quantities from menus
+      // Applies recipe scaling factors: ingredient quantity × recipe scalingFactor
+      // Sums quantities across all recipes and menus
       const sources = new Map()
 
       if (!Array.isArray(menus)) return sources
@@ -467,6 +470,8 @@ export default {
 
         const recipes = Array.isArray(menu?.recipes) ? menu.recipes : []
         recipes.forEach((recipe) => {
+          // Get scaling factor from recipe, default to 1 if not present
+          const scalingFactor = Number(recipe?.scalingFactor ?? 1)
           const ingredients = Array.isArray(recipe?.ingredients) ? recipe.ingredients : []
           ingredients.forEach((ingredient) => {
             if (!ingredient?.name) return
@@ -483,7 +488,8 @@ export default {
             }
             
             const aggregated = menuIngredientsMap.get(ingredientKey)
-            aggregated.quantity += Number(ingredient.quantity ?? 0)
+            // Apply scaling factor: multiply ingredient quantity by recipe scaling factor
+            aggregated.quantity += Number(ingredient.quantity ?? 0) * scalingFactor
           })
         })
 
@@ -542,7 +548,11 @@ export default {
       const ingredientsMap = new Map()
 
       if (optimalOrders.length > 0) {
-        optimalOrders.forEach((order, orderIndex) => {
+        // Process optimal orders and calculate costs correctly from the start
+        // Uses scaled source quantities (from buildSourcesByName) and calculates:
+        // packagesNeeded = Math.ceil(scaledQuantityNeeded / packageSize)
+        // totalCost = packagesNeeded × packagePrice
+        optimalOrders.forEach((order) => {
           const purchaseOptionId = order?.purchaseOptionId || order?.purchaseOption?.id
           const purchaseOption = purchaseOptionId ? purchaseOptionById.get(purchaseOptionId) : null
           const itemId = order?.itemId || purchaseOption?.itemId
@@ -550,21 +560,25 @@ export default {
           const store = purchaseOption?.store || order?.store || 'Unknown Store'
           const units = order?.units || purchaseOption?.units || ''
 
-          const rawCount = Number(order?.count ?? order?.multiplier ?? order?.quantityToBuy ?? order?.qtyToBuy ?? 1)
-          const orderCount = Number.isFinite(rawCount) && rawCount > 0 ? rawCount : 1
-          const rawQuantity = Number(order?.quantity ?? 0)
-          const totalQuantity = Number.isFinite(rawQuantity) ? rawQuantity * orderCount : 0
-
-          // Prefer purchaseOption.price as it's guaranteed to be per-unit from catalog
-          // order.price might be total price, so only use as fallback
-          const perUnitPrice = purchaseOption?.price !== undefined && purchaseOption?.price !== null
-            ? Number(purchaseOption.price)
-            : (order?.price !== undefined && order?.price !== null ? Number(order.price) : 0)
+          // Get scaled source quantities (already includes scaling factors from buildSourcesByName)
+          const sources = sourcesByName.get(itemName) || []
+          const sourceTotalQuantity = sources.reduce((sum, source) => sum + (Number(source.quantity) || 0), 0)
           
-          // Calculate cost: per-unit price × total quantity
-          const totalCost = Number.isFinite(perUnitPrice) && Number.isFinite(totalQuantity) && totalQuantity > 0
-            ? perUnitPrice * totalQuantity
-            : 0
+          // Get package size and price from optimalOrder
+          const packageSize = Number(order?.quantity ?? 0) // Package size (e.g., 18 eggs, 8 oz)
+          const packagePrice = Number(order?.price ?? purchaseOption?.price ?? 0) // Package price
+          
+          // Calculate packages needed: ceil(scaled quantity needed / package size)
+          // If no sources found, fallback to 1 package
+          const packagesNeeded = sourceTotalQuantity > 0 && packageSize > 0
+            ? Math.ceil(sourceTotalQuantity / packageSize)
+            : (packageSize > 0 ? 1 : 0)
+          
+          // Calculate cost: packages needed × package price
+          const totalCost = packagesNeeded * packagePrice
+          
+          // Use scaled source quantity, or fallback to package size if no sources
+          const totalQuantity = sourceTotalQuantity > 0 ? sourceTotalQuantity : packageSize
 
           // Check if purchase option is confirmed (default to false if purchase option not found)
           const isConfirmed = purchaseOption ? (purchaseOption.confirmed === true) : false
@@ -578,41 +592,34 @@ export default {
             store,
             sources: [],
             isConfirmed: true, // Default to confirmed, will be set to false if any option is unconfirmed
-            perUnitPrice: 0 // Store per-unit price for recalculation
+            packageQuantity: 0, // Store package size (e.g., 5 lbs, 18 eggs)
+            packagePrice: 0 // Store package price (e.g., $15, $5.59)
           }
 
+          // Accumulate quantities and costs (handles multiple optimalOrders for same ingredient)
           baseEntry.totalQuantity += totalQuantity
           baseEntry.totalCost += totalCost
-          // Store per-unit price (use the latest one if multiple orders)
-          if (perUnitPrice > 0) {
-            baseEntry.perUnitPrice = perUnitPrice
+          
+          // Store package info for reference
+          if (packageSize > 0 && packagePrice > 0) {
+            baseEntry.packageQuantity = packageSize
+            baseEntry.packagePrice = packagePrice
           }
+          
           // If this purchase option is unconfirmed, mark the ingredient as unconfirmed
           if (!isConfirmed) {
             baseEntry.isConfirmed = false
           }
 
-          if (!baseEntry.sources.length && sourcesByName.has(itemName)) {
-            baseEntry.sources = sourcesByName.get(itemName).map((source) => ({
+          // Attach sources if not already attached
+          if (!baseEntry.sources.length && sources.length > 0) {
+            baseEntry.sources = sources.map((source) => ({
               ...source,
               store: source.store || store
             }))
           }
 
           ingredientsMap.set(key, baseEntry)
-        })
-        
-        // Recalculate costs based on source quantities if they differ from optimalOrder quantities
-        // This handles cases where the backend optimizes to buy less, but we need to show cost for total needed
-        ingredientsMap.forEach((entry, key) => {
-          if (entry.sources && entry.sources.length > 0) {
-            const sourceTotalQuantity = entry.sources.reduce((sum, source) => sum + (Number(source.quantity) || 0), 0)
-            // If source total quantity differs from optimalOrder quantity, recalculate cost using stored per-unit price
-            if (sourceTotalQuantity > 0 && Math.abs(sourceTotalQuantity - entry.totalQuantity) > 0.01 && entry.perUnitPrice > 0) {
-              entry.totalQuantity = sourceTotalQuantity
-              entry.totalCost = entry.perUnitPrice * sourceTotalQuantity
-            }
-          }
         })
       } else {
         aggregatedIngredients.forEach((ingredient) => {
