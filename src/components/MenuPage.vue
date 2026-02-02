@@ -53,7 +53,13 @@
           <span class="menu-owner">Owner: {{ ownerUsername || menu.owner }}</span>
           <span class="menu-cost" v-if="menuCost !== null || menuCostLoading">
             <span v-if="menuCostLoading">Loading cost...</span>
-            <span v-else-if="menuCost !== null">Cost: {{ formatCost(menuCost) }}</span>
+            <span v-else-if="menuCost !== null" class="menu-cost-with-tooltip">
+              Cost: {{ formatCost(menuCost) }}
+              <span class="tooltip-container">
+                <span class="tooltip-icon">?</span>
+                <span class="tooltip-text">Recipe base costs are calculated with a scaling factor of 1 and is independent of any Menu/WeeklyCart that the recipe is in. Therefore, the summation of recipe costs will most likely not reflect the cost of the menu.</span>
+              </span>
+            </span>
             <span v-else-if="menuCostError">Cost unavailable</span>
           </span>
         </div>
@@ -135,7 +141,7 @@
                   <span v-if="recipe.dishType" class="dish-type">{{ recipe.dishType }}</span>
                   <span class="recipe-cost" v-if="recipeCosts[recipe.id] !== undefined || recipeCostsLoading[recipe.id]">
                     <span v-if="recipeCostsLoading[recipe.id]">Loading cost...</span>
-                    <span v-else-if="recipeCosts[recipe.id] !== null">Cost: {{ formatCost(recipeCosts[recipe.id]) }}</span>
+                    <span v-else-if="recipeCosts[recipe.id] !== null">Base Cost: {{ formatCost(recipeCosts[recipe.id]) }}</span>
                     <span v-else>Cost unavailable</span>
                   </span>
                 </div>
@@ -2296,6 +2302,80 @@ const editingIngredientIndex = ref(null) // Track which ingredient is being edit
   gap: 2rem;
   color: var(--secondary-color);
   font-size: 1.1rem;
+}
+
+.menu-cost-with-tooltip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  vertical-align: baseline;
+}
+
+.tooltip-container {
+  position: relative;
+  display: inline-block;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+.tooltip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: var(--primary-color);
+  color: white;
+  font-size: 0.875rem;
+  font-weight: bold;
+  cursor: help;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.tooltip-icon:hover {
+  background-color: var(--secondary-color);
+  transform: scale(1.1);
+}
+
+.tooltip-text {
+  visibility: hidden;
+  opacity: 0;
+  position: absolute;
+  top: 125%;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: #333;
+  color: white;
+  text-align: left;
+  padding: 1rem 1.25rem;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: normal;
+  white-space: normal;
+  width: 380px;
+  z-index: 1000;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  line-height: 1.5;
+}
+
+.tooltip-text::before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-bottom-color: #333;
+}
+
+.tooltip-container:hover .tooltip-text {
+  visibility: visible;
+  opacity: 1;
 }
 
 .menu-actions {
