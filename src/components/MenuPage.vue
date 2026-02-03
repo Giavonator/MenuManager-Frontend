@@ -392,8 +392,20 @@
                     class="form-select ingredient-units-input modern-select"
                     :disabled="!selectedCatalogItem || availableUnits.length === 0"
                   >
-                    <option value="">{{ availableUnits.length === 0 && selectedCatalogItem ? 'No units available' : 'Select units' }}</option>
-                    <option v-for="u in availableUnits" :key="u" :value="u">{{ u }}</option>
+                    <option value="">
+                      {{
+                        availableUnits.length === 0 && selectedCatalogItem
+                          ? 'No units available'
+                          : availableUnitsHeaderLabel
+                      }}
+                    </option>
+                    <option
+                      v-for="u in availableUnits"
+                      :key="u"
+                      :value="u"
+                    >
+                      {{ u }}
+                    </option>
                   </select>
                 <button 
                   type="button"
@@ -539,12 +551,24 @@
                   class="form-input ingredient-quantity-input"
                 />
                 <select 
-                  v-model="newIngredient.units" 
+                  v-model="newIngredient.units"
                   class="form-select ingredient-units-input modern-select"
                   :disabled="!selectedCatalogItem || availableUnits.length === 0"
                 >
-                  <option value="">{{ availableUnits.length === 0 && selectedCatalogItem ? 'No units available' : 'Select units' }}</option>
-                  <option v-for="u in availableUnits" :key="u" :value="u">{{ u }}</option>
+                  <option value="">
+                    {{
+                      availableUnits.length === 0 && selectedCatalogItem
+                        ? 'No units available'
+                        : availableUnitsHeaderLabel
+                    }}
+                  </option>
+                  <option
+                    v-for="u in availableUnits"
+                    :key="u"
+                    :value="u"
+                  >
+                    {{ u }}
+                  </option>
                 </select>
                 <button 
                   type="button"
@@ -604,7 +628,7 @@
                         No ingredients found
                       </div>
                     </div>
-                    <input 
+                <input 
                       v-model.number="newIngredient.quantity" 
                       type="number" 
                       step="0.1" 
@@ -612,14 +636,26 @@
                       placeholder="Quantity"
                       class="form-input ingredient-quantity-input"
                     />
-                    <select 
-                      v-model="newIngredient.units" 
-                      class="form-select ingredient-units-input modern-select"
-                      :disabled="!selectedCatalogItem || availableUnits.length === 0"
-                    >
-                      <option value="">{{ availableUnits.length === 0 && selectedCatalogItem ? 'No units available' : 'Select units' }}</option>
-                      <option v-for="u in availableUnits" :key="u" :value="u">{{ u }}</option>
-                    </select>
+                <select 
+                  v-model="newIngredient.units" 
+                  class="form-select ingredient-units-input modern-select"
+                  :disabled="!selectedCatalogItem || availableUnits.length === 0"
+                >
+                  <option value="">
+                    {{
+                      availableUnits.length === 0 && selectedCatalogItem
+                        ? 'No units available'
+                        : availableUnitsHeaderLabel
+                    }}
+                  </option>
+                  <option
+                    v-for="u in availableUnits"
+                    :key="u"
+                    :value="u"
+                  >
+                    {{ u }}
+                  </option>
+                </select>
                     <button 
                       type="button"
                       @click="saveEditedIngredient" 
@@ -700,6 +736,7 @@ import { weeklyCartStore } from '../stores/weeklyCartStore.js'
 import { menuDetailStore, menuDetailState } from '../stores/menuDetailStore.js'
 import { catalogStore, catalogState } from '../stores/catalogStore.js'
 import { fetchMenuCost, fetchRecipeCost, formatCost } from '../utils/costUtils.js'
+import { ALLOWED_UNITS_BY_CATEGORY, getUnitCategory } from '../constants/storeCatalogConstants.js'
 
 export default {
   name: 'MenuPage',
@@ -1101,17 +1138,73 @@ const editingIngredientIndex = ref(null) // Track which ingredient is being edit
     })
     
     const availableUnits = computed(() => {
-      if (!selectedCatalogItem.value || !selectedCatalogItem.value.purchaseOptions || selectedCatalogItem.value.purchaseOptions.length === 0) {
+      const item = selectedCatalogItem.value
+
+      if (!item || !Array.isArray(item.purchaseOptions) || item.purchaseOptions.length === 0) {
         return []
       }
-      // Extract unique units from purchase options
-      const units = new Set()
-      selectedCatalogItem.value.purchaseOptions.forEach(po => {
-        if (po.units) {
-          units.add(po.units)
+
+      // Determine which unit categories are used by this item's purchase options
+      const categories = new Set()
+
+      item.purchaseOptions.forEach((po) => {
+        if (!po || !po.units) return
+        const category = getUnitCategory(po.units)
+        if (category) {
+          categories.add(category)
         }
       })
-      return Array.from(units).sort()
+
+      if (categories.size === 0) {
+        // No recognizable categories from the purchase options -> no units available
+        return []
+      }
+
+      // Union of all allowed units across the detected categories
+      const unitsSet = new Set()
+
+      categories.forEach((category) => {
+        const unitsForCategory = ALLOWED_UNITS_BY_CATEGORY[category] || []
+        unitsForCategory.forEach((u) => unitsSet.add(u))
+      })
+
+      // The templates and validation expect an array of simple unit strings
+      return Array.from(unitsSet).sort()
+    })
+
+    const UNIT_CATEGORY_LABELS = {
+      volume: 'Volume Units',
+      weight: 'Weight Units',
+      count: 'Countable Units'
+    }
+
+    const availableUnitsHeaderLabel = computed(() => {
+      const item = selectedCatalogItem.value
+
+      if (!item || !Array.isArray(item.purchaseOptions) || item.purchaseOptions.length === 0) {
+        return 'Select units'
+      }
+
+      const categories = new Set()
+
+      item.purchaseOptions.forEach((po) => {
+        if (!po || !po.units) return
+        const category = getUnitCategory(po.units)
+        if (category) {
+          categories.add(category)
+        }
+      })
+
+      if (categories.size === 1) {
+        const category = Array.from(categories)[0]
+        return UNIT_CATEGORY_LABELS[category] || 'Units'
+      }
+
+      if (categories.size > 1) {
+        return 'Units'
+      }
+
+      return 'Select units'
     })
     
     // Watch for menu data changes to update edit form
@@ -2136,6 +2229,7 @@ const editingIngredientIndex = ref(null) // Track which ingredient is being edit
       showIngredientDropdown,
       filteredCatalogItems,
       availableUnits,
+      availableUnitsHeaderLabel,
       catalogState,
       ingredientSearchInputRef,
       editIngredientSearchInputRef,
