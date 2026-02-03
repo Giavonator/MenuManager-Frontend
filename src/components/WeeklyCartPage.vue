@@ -158,7 +158,9 @@
         </div>
         
         <div class="ingredients-grid">
-          <div v-for="ingredient in sortedIngredients" :key="`${ingredient.name}-${ingredient.units}-${ingredient.store || ''}-${ingredient.isMenuHeader || ingredient.isStoreHeader ? 'header' : ''}`" 
+          <div
+            v-for="(ingredient, index) in sortedIngredients"
+            :key="`${ingredient.name}-${ingredient.units}-${ingredient.store || ''}-${ingredient.menuId || ''}-${ingredient.date || ''}-${ingredient.isMenuHeader || ingredient.isStoreHeader ? 'header' : 'item'}-${index}`" 
                :class="['ingredient-item', { 'menu-header': ingredient.isMenuHeader, 'store-header': ingredient.isStoreHeader, 'unconfirmed-ingredient': !ingredient.isMenuHeader && !ingredient.isStoreHeader && ingredient.isConfirmed === false }]">
             <div class="ingredient-info">
               <h4 v-if="!ingredient.isMenuHeader && !ingredient.isStoreHeader">
